@@ -1,0 +1,41 @@
+# Paths that make up the grader. A PR that breaks one of these rules fails
+# the `protected-paths` check unless it carries the `approved-protected`
+# label, which only Khakha adds.
+#
+# The check always reads this file from the base branch, so a PR that edits
+# it changes nothing until it merges (and editing it needs the label anyway).
+#
+# Format: one rule per line, `<kind> <glob>`. Blank lines and lines starting
+# with `#` are ignored.
+#
+# Kinds:
+#   any       adding, modifying, deleting or renaming a matching file needs
+#             the label.
+#   existing  modifying, deleting or renaming a matching file needs the
+#             label. Adding a new file does not.
+#
+# Globs match the whole repo-relative path. `*` and `?` stay inside one path
+# segment. `**` matches any number of segments, including none.
+
+# Task briefs and their acceptance criteria.
+any tasks/**
+
+# The PRD, the plan and its Decisions table.
+any docs/**
+
+# CI, this check, its rules and the PR template.
+any .github/**
+
+# License allowlist and pinned toolchain.
+any deny.toml
+any rust-toolchain.toml
+
+# Perf budget thresholds. T-005 creates this file.
+any crates/helm-bench/budgets.toml
+
+# The rules every agent follows.
+any AGENTS.md
+
+# Acceptance tests. Adding tests never weakens the grader; changing or
+# removing existing ones can.
+existing crates/*/tests/**

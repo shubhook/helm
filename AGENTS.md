@@ -60,6 +60,7 @@ Only `helm-ui` may use GPUI or know that a window exists. Nothing below `helm-ui
 - Name every outside source you followed (docs, articles, other repos) in the PR description.
 - Add no new dependency without saying why in the PR description.
 - Every `unsafe` block gets a `// SAFETY:` comment explaining why it is sound.
+- Never add or remove the `approved-protected` label on a PR. Only Khakha does. The `protected-paths` check fails any PR that touches a path in `.github/protected-paths.txt` without it.
 - The UI thread never blocks (NF-9). Parsing, LSP traffic, search, git, file IO and agent traffic run on workers against snapshots.
 
 ## Commands

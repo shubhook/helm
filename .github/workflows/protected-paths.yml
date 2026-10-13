@@ -1,0 +1,69 @@
+name: protected-paths
+
+# pull_request_target runs this file as it is on the base branch, so a PR
+# cannot weaken the check by editing it. The trade-off: the job runs with
+# the base repo's token, so it must never check out or run the PR's code.
+# It checks out the base branch only and reads the PR's changed files and
+# labels from the GitHub API.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Adding or removing a label starts a new run; only the latest one counts.
+concurrency:
+  group: protected-paths-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  protected-paths:
+    name: protected-paths
+    runs-on: ubuntu-latest
+    steps:
+      # Under pull_request_target the default ref is the tip of the base
+      # branch, never the PR, so the rules file and script come from there.
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - name: Test the check
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s .github/scripts -v
+
+      - name: Check changed files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          files="$RUNNER_TEMP/files.jsonl"
+
+          # Read live from the API rather than the event payload, so a
+          # re-run after a label change sees the current labels.
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[] | {filename, status, previous_filename}' > "$files"
+          changed=$(gh api "repos/$REPO/pulls/$PR" --jq .changed_files)
+          mapfile -t labels < <(gh api --paginate "repos/$REPO/issues/$PR/labels" --jq '.[].name')
+
+          args=(--rules .github/protected-paths.txt --files "$files" --expected-count "$changed")
+          for label in "${labels[@]}"; do
+            args+=(--label "$label")
+          done
+
+          status=0
+          python3 .github/scripts/protected_paths.py "${args[@]}" > "$RUNNER_TEMP/report.txt" || status=$?
+          cat "$RUNNER_TEMP/report.txt"
+          {
+            echo '### protected-paths'
+            echo '```'
+            cat "$RUNNER_TEMP/report.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
