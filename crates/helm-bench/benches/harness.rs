@@ -8,7 +8,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 const STRING_LEN: usize = 1 << 20;
 
 /// Number of insert-and-slice steps per iteration.
-const EDITS: usize = 64;
+const EDITS: usize = 128;
 
 /// PLACEHOLDER, replaced by the rope benchmarks in T-101. It exists so the
 /// harness and the CI comparison have something real to measure: each
