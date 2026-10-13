@@ -5,3 +5,4 @@ Helm is a native Rust code editor for macOS. It aims to open in under 200 ms, ed
 What v1 must do is in [docs/prd.md](docs/prd.md). How it gets built is in [docs/plan.md](docs/plan.md).
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
