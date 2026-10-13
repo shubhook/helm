@@ -6,3 +6,15 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 publish = false
+
+[dependencies]
+# The rope behind `Buffer`. Pinned to the latest 1.x release; 2.0 is still a
+# beta. Default features are off because `unicode_lines` would count U+2028,
+# NEL, VT and FF as line breaks, and LSP counts only LF, CRLF and CR.
+# `cr_lines` adds lone CR; `simd` is re-enabled because turning off default
+# features drops it.
+ropey = { version = "=1.6.1", default-features = false, features = ["cr_lines", "simd"] }
+
+[dev-dependencies]
+# Property tests for T-101's acceptance tests.
+proptest = "=1.12.0"
