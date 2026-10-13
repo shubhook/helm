@@ -95,11 +95,32 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.9.2
 
+      # Counts helm-bench's bench targets in the workspace of the current
+      # directory. A side with none, or with no helm-bench at all, is skipped,
+      # and when head has none there is nothing to compare. bench-compare
+      # treats an empty head as an error, so it must not run then.
       - name: Build benchmarks
         run: |
+          count_benches() {
+            cargo metadata --no-deps --format-version 1 --locked |
+              jq '[.packages[] | select(.name == "helm-bench") | .targets[]
+                   | select(.kind | index("bench"))] | length'
+          }
+          head_benches=$(count_benches)
+          base_benches=$(cd "$RUNNER_TEMP/base" && count_benches)
+
+          if [ "$head_benches" -eq 0 ]; then
+            msg="The head commit has no benchmarks, so there is nothing to compare."
+            echo "::notice::$msg"
+            printf '## Benchmarks\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+            echo "HAS_HEAD=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "HAS_HEAD=true" >> "$GITHUB_ENV"
           cargo bench -p helm-bench --locked --no-run
           cargo build -p helm-bench --bin bench-compare --locked
-          if [ -d "$RUNNER_TEMP/base/crates/helm-bench/benches" ]; then
+
+          if [ "$base_benches" -gt 0 ]; then
             (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked --no-run)
             echo "HAS_BASE=true" >> "$GITHUB_ENV"
           else
@@ -110,6 +131,7 @@ jobs:
       # Alternating base and head spreads any slowdown of the runner over
       # both sides instead of landing on one.
       - name: Run benchmarks
+        if: env.HAS_HEAD == 'true'
         run: |
           for round in $(seq "$ROUNDS"); do
             if [ "$HAS_BASE" = true ]; then
@@ -123,6 +145,7 @@ jobs:
           done
 
       - name: Compare against budgets
+        if: env.HAS_HEAD == 'true'
         run: |
           args=()
           for round in $(seq "$ROUNDS"); do

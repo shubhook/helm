@@ -17,10 +17,6 @@ bench = false
 name = "bench-compare"
 bench = false
 
-[[bench]]
-name = "harness"
-harness = false
-
 [dependencies]
 helm-text = { path = "../helm-text" }
 # bench-compare reads budgets.toml and criterion's estimates.json files.
