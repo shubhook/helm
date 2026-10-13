@@ -56,3 +56,117 @@ jobs:
         with:
           command: check
           arguments: --all-features --locked
+
+  # Fails a PR when a benchmark gets slower than its budget in
+  # crates/helm-bench/budgets.toml (NF-7). Numbers from an earlier run on a
+  # different hosted runner are too noisy to compare against, so this job
+  # benchmarks the PR's base commit and its head on the same machine.
+  bench:
+    name: bench
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Adds -o pipefail, so `bench-compare | tee` fails when bench-compare does.
+        shell: bash
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      # Criterion flags for every run. 10 s of measurement keeps the 100
+      # samples from being cut short on a slow runner.
+      BENCH_FLAGS: --warm-up-time 3 --measurement-time 10
+      # Base and head runs alternate this many times; each side keeps its
+      # fastest median.
+      ROUNDS: 3
+    steps:
+      # The default ref for a pull request is the merge of head into base,
+      # which is the code that would land.
+      - uses: actions/checkout@v7.0.1
+
+      - name: Check out the base commit
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          echo "CRITERION_HOME=$RUNNER_TEMP/criterion" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install
+          (cd "$RUNNER_TEMP/base" && rustup toolchain install)
+
+      - uses: Swatinem/rust-cache@v2.9.2
+
+      - name: Build benchmarks
+        run: |
+          cargo bench -p helm-bench --locked --no-run
+          cargo build -p helm-bench --bin bench-compare --locked
+          if [ -d "$RUNNER_TEMP/base/crates/helm-bench/benches" ]; then
+            (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked --no-run)
+            echo "HAS_BASE=true" >> "$GITHUB_ENV"
+          else
+            echo "::notice::The base commit has no benchmarks; every benchmark is new."
+            echo "HAS_BASE=false" >> "$GITHUB_ENV"
+          fi
+
+      # Alternating base and head spreads any slowdown of the runner over
+      # both sides instead of landing on one.
+      - name: Run benchmarks
+        run: |
+          for round in $(seq "$ROUNDS"); do
+            if [ "$HAS_BASE" = true ]; then
+              echo "::group::base, round $round"
+              (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked -- $BENCH_FLAGS --save-baseline "base-$round")
+              echo "::endgroup::"
+            fi
+            echo "::group::head, round $round"
+            cargo bench -p helm-bench --locked -- $BENCH_FLAGS --save-baseline "head-$round"
+            echo "::endgroup::"
+          done
+
+      - name: Compare against budgets
+        run: |
+          args=()
+          for round in $(seq "$ROUNDS"); do
+            if [ "$HAS_BASE" = true ]; then
+              args+=(--base "base-$round")
+            fi
+            args+=(--head "head-$round")
+          done
+          {
+            echo "## Benchmarks: base ${BASE_SHA::7} vs head"
+            echo
+            target/debug/bench-compare --criterion-dir "$CRITERION_HOME" \
+              --budgets crates/helm-bench/budgets.toml "${args[@]}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: criterion-pr-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/criterion
+          if-no-files-found: ignore
+
+  # Keeps a record of benchmark times on main, one artifact per commit.
+  bench-record:
+    name: bench-record
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      BENCH_FLAGS: --warm-up-time 3 --measurement-time 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2.9.2
+
+      - name: Run benchmarks
+        run: |
+          export CRITERION_HOME="$RUNNER_TEMP/criterion"
+          cargo bench -p helm-bench --locked -- $BENCH_FLAGS --save-baseline main
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: criterion-${{ github.sha }}
+          path: ${{ runner.temp }}/criterion
+          retention-days: 90

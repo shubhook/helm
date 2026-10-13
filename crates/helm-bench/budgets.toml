@@ -1,0 +1,17 @@
+# Performance budgets for the criterion benchmarks in this crate.
+#
+# The `bench` CI job runs every benchmark on the PR's base commit and on its
+# head commit, on the same runner, and fails if a benchmark's head time is
+# more than its budget slower than its base time. This file holds every
+# threshold; no script or workflow hard-codes one.
+#
+# Changing this file needs the `approved-protected` label (T-003).
+
+# Allowed slowdown of head over base, in percent. NF-7: no regression over 5%.
+default = 5.0
+
+# Per-benchmark overrides, in percent, keyed by criterion's full benchmark id
+# (`group/function` for benchmarks in a group). Example:
+#
+#   "rope/insert_middle" = 8.0
+[benchmarks]
