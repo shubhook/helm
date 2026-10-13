@@ -93,6 +93,17 @@ class Rules(unittest.TestCase):
     def test_rename_within_crate_tests_fails(self):
         self.assertEqual(run(renamed("crates/x/tests/a.rs", "crates/x/tests/b.rs")), 1)
 
+    def test_modified_benchmark_fails(self):
+        self.assertEqual(run(modified("crates/helm-bench/benches/harness.rs")), 1)
+
+    def test_new_benchmark_passes(self):
+        self.assertEqual(run(added("crates/helm-bench/benches/new.rs")), 0)
+
+    def test_bench_compare_change_fails(self):
+        for entry in (added("crates/helm-bench/src/new.rs"), modified("crates/helm-bench/src/compare.rs")):
+            with self.subTest(entry=entry):
+                self.assertEqual(run(entry), 1)
+
     def test_rename_into_any_path_fails(self):
         self.assertEqual(run(renamed("notes.md", "docs/notes.md")), 1)
 
