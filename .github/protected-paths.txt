@@ -24,6 +24,10 @@ any   AGENTS.md
 
 # Perf budget thresholds. T-005 creates this file.
 any   crates/helm-bench/budgets.toml
+# Benchmark code is part of the grader. Adding a new benchmark is free.
+edit  crates/helm-bench/benches/**
+# bench-compare decides pass or fail, so any change to it needs the label.
+any   crates/helm-bench/src/**
 
 # Acceptance tests. Adding tests never weakens the grader; editing existing
 # ones can.
