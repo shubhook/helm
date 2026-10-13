@@ -1,0 +1,40 @@
+# cargo-deny configuration. See https://embarkstudios.github.io/cargo-deny/
+# Any exception to these rules goes in its own PR for Khakha to approve.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+
+[licenses]
+version = 2
+# Permissive licenses only. Copyleft licenses (GPL, LGPL, AGPL, MPL-2.0) are
+# rejected because they are not listed here.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+# No dependency uses most of these yet, so don't warn about unused entries.
+unused-allowed-license = "allow"
+exceptions = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Lets workspace crates depend on each other by path without a version.
+# Applies only to crates that are not published to a registry.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
