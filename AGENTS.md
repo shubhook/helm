@@ -72,7 +72,7 @@ cargo build --workspace
 cargo test --workspace
 cargo fmt --all --check        # cargo fmt has no --workspace flag; --all is its equivalent
 cargo clippy --workspace --all-targets -- -D warnings
-# benchmarks: T-005 adds the command here
+cargo bench -p helm-bench      # benchmarks; budgets are in crates/helm-bench/budgets.toml
 ```
 
 ## Commit messages
