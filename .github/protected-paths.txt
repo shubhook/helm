@@ -1,0 +1,30 @@
+# Paths that grade a task. A PR that breaks one of these rules fails the
+# protected-paths check unless Khakha adds the `approved-protected` label.
+#
+# The check reads this file from main, never from the PR, so editing it in a
+# PR changes nothing until that PR merges (and editing it needs the label).
+#
+# Format: one rule per line, `<kind> <glob>`. Blank lines and lines starting
+# with # are ignored.
+#
+#   any   any change needs the label: add, modify, delete or rename.
+#   edit  modify, delete or rename needs the label. Adding a new file is free.
+#
+# Globs match the whole repo-relative path. `*` matches within one path
+# segment, `**` matches across segments, `?` matches one character.
+# A rename counts as deleting the old path and adding the new one.
+
+# Task specs, docs, CI and license config, toolchain pin, agent instructions.
+any   tasks/**
+any   docs/**
+any   .github/**
+any   deny.toml
+any   rust-toolchain.toml
+any   AGENTS.md
+
+# Perf budget thresholds. T-005 creates this file.
+any   crates/helm-bench/budgets.toml
+
+# Acceptance tests. Adding tests never weakens the grader; editing existing
+# ones can.
+edit  crates/*/tests/**

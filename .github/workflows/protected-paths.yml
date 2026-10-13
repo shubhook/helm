@@ -1,0 +1,52 @@
+name: Protected paths
+
+# pull_request_target runs the copy of this workflow on main, not the PR's
+# copy, so a PR cannot weaken the check by editing it. The price is that this
+# job has a token for the base repo, so it must never check out, build or run
+# anything from the PR. It reads the PR's file list from the API and checks it
+# with the script and rules from main.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# A new event on a PR (push or label change) cancels that PR's older run.
+concurrency:
+  group: protected-paths-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  protected-paths:
+    name: protected-paths
+    runs-on: ubuntu-latest
+    steps:
+      # Under pull_request_target, github.sha is the head of main. Only the
+      # rules file and the script are checked out.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/protected-paths.txt
+            .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Test the checker
+        run: python3 .github/scripts/test_protected_paths.py
+
+      - name: Check changed files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'approved-protected') }}
+        run: |
+          set -euo pipefail
+          flag=""
+          if [ "$APPROVED" = "true" ]; then flag="--approved"; fi
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[]' > files.jsonl
+          python3 .github/scripts/protected_paths.py .github/protected-paths.txt $flag < files.jsonl \
+            | tee -a "$GITHUB_STEP_SUMMARY"
