@@ -85,7 +85,7 @@ The v1 user is Khakha: a developer on macOS who writes TS, JS, Go and Rust, work
 
 ## Non-functional requirements
 
-The numbers are targets from the research, not measurements of anything yet. Phase 2 produces the first real numbers, and a target that proves wrong is changed here by Khakha, never by an agent. Every NF item with a number is checked in CI against a rolling baseline on hosted runners, and Helm's own process is measured apart from its language servers.
+The numbers are targets from the research, not measurements of anything yet. Phase 2 produces the first real numbers, and a target that proves wrong is changed here by Khakha, never by an agent. Every NF item with a number is checked in CI on hosted runners against the PR's base commit, and Helm's own process is measured apart from its language servers.
 
 | ID | Requirement | Target | How CI measures it |
 | --- | --- | --- | --- |

@@ -23,7 +23,7 @@ All eleven decisions are made. An agent never changes one; propose a change in t
 | Screen reader support | Not in v1 | Listed in the non-goals. |
 | Editing model | Both | VS Code-style keys and Vim keys both ship in v1, switchable in settings. The keymap supports modes from Phase 1. |
 | Text buffer | ropey | Helix ships it. It sits behind Helm's own buffer trait, so a later swap touches one crate. |
-| Perf hardware | No dedicated machine in v1 | The speed budgets stay in CI, because a fast editor is the point of Helm. They run on hosted runners against a rolling baseline, since shared runners are too noisy for fixed millisecond limits. |
+| Perf hardware | No dedicated machine in v1 | The speed budgets stay in CI, because a fast editor is the point of Helm. They run on hosted runners, and each PR is compared with its base commit on the same runner, since shared runners are too noisy for fixed millisecond limits or for comparing against earlier runs. |
 | v1 scope | As written in prd.md | Phase 7 and the non-goals below define v1. |
 | Agent integration | ACP only | Claude Code, Codex and Gemini CLI already speak it. |
 
@@ -107,7 +107,7 @@ Every change starts as a task spec you approve and ends as a PR that passes CI a
 
 1. An agent drafts the spec and its tests. You approve or edit them, and they merge on their own.
 2. An agent branches from that commit in a clean checkout.
-3. The agent opens a PR. CI runs `cargo fmt --check`, `clippy` with warnings as errors, the tests, the perf benchmarks against a rolling baseline, and `cargo-deny` for licenses.
+3. The agent opens a PR. CI runs `cargo fmt --check`, `clippy` with warnings as errors, the tests, the perf benchmarks against the PR's base commit, and `cargo-deny` for licenses.
 4. CI also fails the PR if it changes the spec's test files or a budget threshold. Without this check, an agent can pass by weakening the grader.
 5. You review interfaces, `unsafe`, threading and anything the spec calls out. Then merge.
 
@@ -133,7 +133,7 @@ These are the tasks for Phases 0 and 1, in order. Later phases get their task li
 | T-002 | CI on macOS and Linux: fmt, clippy with warnings as errors, tests, and `cargo-deny` with a license allowlist | repo | NF-12 | T-001 |
 | T-003 | Protected-paths check: CI fails a PR that edits a spec's tests or a budget threshold unless you add an approval label | repo | none | T-002 |
 | T-004 | `AGENTS.md`, a `CLAUDE.md` that points to it, `tasks/TEMPLATE.md` and a PR template that asks for PRD IDs | repo | none | T-001 |
-| T-005 | Benchmark harness with `criterion` and a rolling-baseline comparison in CI | helm-bench | NF-7 | T-002 |
+| T-005 | Benchmark harness with `criterion` and a CI job that compares each PR with its base commit | helm-bench | NF-7 | T-002 |
 | T-101 | Buffer trait over ropey, with byte, char, line and UTF-16 offset conversions | helm-text | NF-7 | T-005 |
 | T-102 | Transactions with undo and redo, including one transaction across several buffers | helm-text | ED-2 | T-101 |
 | T-103 | Cheap snapshots tagged with a buffer version, and a stress test of concurrent readers | helm-text | NF-9 | T-101 |

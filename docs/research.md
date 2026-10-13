@@ -108,7 +108,7 @@ The numbers below are targets, not measurements. They are set near what the fast
 
 For scale, Pavel Fatin measured GVim at 1.4 ms average, Sublime Text at 12.6 ms and Atom at 60.4 ms, on a Windows laptop on battery. Keyboard and monitor alone add about 26 ms, so the editor's share is the part Helm controls.
 
-CI runners on shared machines are noisy, so compare against a rolling baseline, not a fixed number.
+CI runners on shared machines are noisy, so compare against a rolling baseline, not a fixed number. Helm does this by benchmarking each PR's base and head commits on the same runner (T-005).
 
 ## Building it with agents
 
