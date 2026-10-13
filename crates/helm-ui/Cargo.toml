@@ -1,0 +1,15 @@
+[package]
+name = "helm-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+helm-editor = { path = "../helm-editor" }
+helm-syntax = { path = "../helm-syntax" }
+helm-lsp = { path = "../helm-lsp" }
+helm-project = { path = "../helm-project" }
+helm-terminal = { path = "../helm-terminal" }
+helm-agent = { path = "../helm-agent" }
