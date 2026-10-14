@@ -50,14 +50,30 @@
 //! transaction. Each buffer has its own undo and redo history, and a
 //! transaction that touched several buffers is undone in all of them or in
 //! none. [`BufferSet`] documents the full rules.
+//!
+//! # Line endings and BOM
+//!
+//! [`FileFormat::decode`] turns a file's bytes into its text and a
+//! [`FileFormat`]: whether the file starts with a UTF-8 BOM, and how many LF,
+//! CRLF and lone CR line breaks it has. The text keeps every line break as
+//! it is in the file, so [`FileFormat::encode`] writes back the same bytes,
+//! even for a file with mixed line breaks. [`FileFormat::newline`] is the
+//! line break for a new line the user types, LF for a new file. Bytes that
+//! aren't UTF-8, including UTF-16, return a [`DecodeError`]. Reading and
+//! writing files is `helm-project`'s job.
 
 mod buffer;
 mod buffer_set;
+mod encoding;
 mod error;
 mod transaction;
 
 pub use buffer::Buffer;
 pub use buffer_set::BufferSet;
+pub use encoding::{
+    ByteOrder, DecodeError, Decoded, FileFormat, LineEnding, LineEndingStyle, LineEndings,
+    UTF16_SAMPLE_LEN,
+};
 pub use error::{HistoryError, TextError, TransactionError};
 pub use transaction::{BufferId, Edit, Transaction, TransactionId};
 
