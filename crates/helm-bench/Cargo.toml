@@ -26,9 +26,12 @@ toml = { version = "=1.1.8", default-features = false, features = ["std", "serde
 [dev-dependencies]
 # Plots off: CI only needs the numbers, and plotters pulls in a large tree.
 criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
-
 [[bench]]
 name = "text"
+harness = false
+
+[[bench]]
+name = "transactions"
 harness = false
 
 [[bench]]

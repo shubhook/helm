@@ -381,7 +381,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
-    #[ignore = "T-102: not implemented yet"]
     fn random_histories_match_the_oracle(starts in starts(), ops in ops()) {
         let mut case = Case::new(&starts);
         for op in &ops {
@@ -390,7 +389,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-102: not implemented yet"]
     fn undoing_everything_restores_every_buffer(starts in starts(), ops in ops()) {
         let mut case = Case::new(&starts);
         for op in &ops {
