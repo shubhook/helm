@@ -1,13 +1,6 @@
 //! Turning file bytes into text and back: the UTF-8 BOM, line ending
 //! detection, and rejecting bytes that aren't UTF-8.
 
-// The bodies below are stubs until T-104 is implemented. `expect` rather than
-// `allow`, so the build fails once the stubs are gone and this line stays.
-#![expect(
-    unused_variables,
-    reason = "T-104 interface stubs; the implementation deletes this"
-)]
-
 use std::fmt;
 
 /// One line break: what a new line the user types is written as.
@@ -67,14 +60,35 @@ pub struct LineEndings {
 impl LineEndings {
     /// Counts the line breaks of `text`.
     pub fn count(text: &str) -> Self {
-        todo!()
+        let bytes = text.as_bytes();
+        let mut counts = Self::default();
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'\n' => counts.lf += 1,
+                b'\r' if bytes.get(i + 1) == Some(&b'\n') => {
+                    counts.crlf += 1;
+                    i += 1;
+                }
+                b'\r' => counts.cr += 1,
+                _ => {}
+            }
+            i += 1;
+        }
+        counts
     }
 
     /// [`LineEndingStyle::None`] when every count is zero,
     /// [`LineEndingStyle::Uniform`] when exactly one count is non-zero, and
     /// [`LineEndingStyle::Mixed`] otherwise.
     pub fn style(&self) -> LineEndingStyle {
-        todo!()
+        match (self.lf > 0, self.crlf > 0, self.cr > 0) {
+            (false, false, false) => LineEndingStyle::None,
+            (true, false, false) => LineEndingStyle::Uniform(LineEnding::Lf),
+            (false, true, false) => LineEndingStyle::Uniform(LineEnding::Crlf),
+            (false, false, true) => LineEndingStyle::Uniform(LineEnding::Cr),
+            _ => LineEndingStyle::Mixed,
+        }
     }
 
     /// The line break to use for a new line the user types.
@@ -85,7 +99,14 @@ impl LineEndings {
     /// [`LineEnding::Lf`]: the convention on macOS, the platform Helm
     /// targets. `gofmt` always writes LF, and Prettier defaults to it.
     pub fn newline(&self) -> LineEnding {
-        todo!()
+        // Strict `>` keeps the earlier kind on a tie.
+        let mut best = (LineEnding::Lf, self.lf);
+        for candidate in [(LineEnding::Crlf, self.crlf), (LineEnding::Cr, self.cr)] {
+            if candidate.1 > best.1 {
+                best = candidate;
+            }
+        }
+        best.0
     }
 }
 
@@ -150,7 +171,34 @@ impl FileFormat {
     ///
     /// Encodings other than UTF-8 are out of scope for `helm-text`.
     pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, DecodeError> {
-        todo!()
+        let (bom, rest) = match bytes.strip_prefix(UTF8_BOM) {
+            Some(rest) => (true, rest),
+            None => {
+                if let Some(byte_order) = utf16_bom(bytes) {
+                    return Err(DecodeError::Utf16 {
+                        byte_order,
+                        bom: true,
+                    });
+                }
+                if let Some(byte_order) = looks_like_utf16(bytes) {
+                    return Err(DecodeError::Utf16 {
+                        byte_order,
+                        bom: false,
+                    });
+                }
+                (false, bytes)
+            }
+        };
+        let text = std::str::from_utf8(rest).map_err(|error| DecodeError::InvalidUtf8 {
+            offset: bytes.len() - rest.len() + error.valid_up_to(),
+        })?;
+        Ok(Decoded {
+            text,
+            format: FileFormat {
+                bom,
+                line_endings: LineEndings::count(text),
+            },
+        })
     }
 
     /// The bytes to save for `text`: the UTF-8 BOM if [`FileFormat::bom`]
@@ -163,7 +211,11 @@ impl FileFormat {
     /// Converting at save time would rewrite lines the user never touched,
     /// and has no single answer for a file with mixed line breaks.
     pub fn encode(&self, text: &str) -> Vec<u8> {
-        todo!()
+        let bom: &[u8] = if self.bom { UTF8_BOM } else { &[] };
+        let mut bytes = Vec::with_capacity(bom.len() + text.len());
+        bytes.extend_from_slice(bom);
+        bytes.extend_from_slice(text.as_bytes());
+        bytes
     }
 
     /// The line break to use for a new line the user types:
@@ -176,6 +228,43 @@ impl FileFormat {
 /// How many bytes from the start of a file [`FileFormat::decode`] looks at
 /// to decide whether a file without a BOM is UTF-16.
 pub const UTF16_SAMPLE_LEN: usize = 1024;
+
+/// The UTF-8 byte order mark.
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// The byte order of the UTF-16 BOM `bytes` starts with, if any.
+fn utf16_bom(bytes: &[u8]) -> Option<ByteOrder> {
+    match bytes {
+        [0xFF, 0xFE, ..] => Some(ByteOrder::LittleEndian),
+        [0xFE, 0xFF, ..] => Some(ByteOrder::BigEndian),
+        _ => None,
+    }
+}
+
+/// The byte order of `bytes` if it looks like ASCII or Latin-1 written as
+/// UTF-16 without a BOM: rule 3 of [`FileFormat::decode`].
+fn looks_like_utf16(bytes: &[u8]) -> Option<ByteOrder> {
+    if !bytes.len().is_multiple_of(2) {
+        return None;
+    }
+    let sample = &bytes[..bytes.len().min(UTF16_SAMPLE_LEN)];
+    if sample.len() < 4 {
+        return None;
+    }
+    let (units, _) = sample.as_chunks::<2>();
+    let mut units = units.iter();
+    let byte_order = match units.next()? {
+        [0, 0] => return None,
+        [_, 0] => ByteOrder::LittleEndian,
+        [0, _] => ByteOrder::BigEndian,
+        _ => return None,
+    };
+    let fits = |unit: &[u8; 2]| match byte_order {
+        ByteOrder::LittleEndian => unit[0] != 0 && unit[1] == 0,
+        ByteOrder::BigEndian => unit[0] == 0 && unit[1] != 0,
+    };
+    units.all(fits).then_some(byte_order)
+}
 
 /// The order of the two bytes of a UTF-16 code unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

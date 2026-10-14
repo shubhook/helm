@@ -56,7 +56,6 @@ fn assert_utf16(bytes: &[u8], byte_order: ByteOrder, bom: bool) {
 // Empty files and the BOM.
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn empty_file() {
     let format = assert_decodes(b"", "", false, counts(0, 0, 0));
     assert_eq!(format, FileFormat::default());
@@ -66,7 +65,6 @@ fn empty_file() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn bom_only() {
     let format = assert_decodes(BOM, "", true, counts(0, 0, 0));
     assert_eq!(format.newline(), LineEnding::Lf);
@@ -74,7 +72,6 @@ fn bom_only() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn bom_with_content() {
     let bytes = with_bom("fn main() {}\n// café 中 😀\n".as_bytes());
     let format = assert_decodes(
@@ -90,7 +87,6 @@ fn bom_with_content() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn bom_with_crlf_content() {
     let bytes = with_bom(b"a\r\nb\r\n");
     let format = assert_decodes(&bytes, "a\r\nb\r\n", true, counts(0, 2, 0));
@@ -98,14 +94,12 @@ fn bom_with_crlf_content() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn only_the_first_bom_is_removed() {
     let bytes = with_bom(&with_bom(b"a"));
     assert_decodes(&bytes, "\u{FEFF}a", true, counts(0, 0, 0));
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn bom_character_after_the_start_is_text() {
     assert_decodes(
         "a\u{FEFF}b".as_bytes(),
@@ -116,7 +110,6 @@ fn bom_character_after_the_start_is_text() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn no_bom() {
     let format = assert_decodes(b"hello", "hello", false, counts(0, 0, 0));
     assert_eq!(format.line_endings.style(), LineEndingStyle::None);
@@ -126,7 +119,6 @@ fn no_bom() {
 // Line endings.
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn lf() {
     let format = assert_decodes(b"a\nb\nc\n", "a\nb\nc\n", false, counts(3, 0, 0));
     assert_eq!(
@@ -137,7 +129,6 @@ fn lf() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn crlf_is_kept_in_the_text() {
     let format = assert_decodes(
         b"a\r\nb\r\nc\r\n",
@@ -153,7 +144,6 @@ fn crlf_is_kept_in_the_text() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn lone_cr() {
     let format = assert_decodes(b"a\rb\rc", "a\rb\rc", false, counts(0, 0, 2));
     assert_eq!(
@@ -164,7 +154,6 @@ fn lone_cr() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn mixed_endings_round_trip() {
     let text = "a\r\nb\nc\r\nd\re\r\n";
     let format = assert_decodes(text.as_bytes(), text, false, counts(1, 3, 1));
@@ -174,7 +163,6 @@ fn mixed_endings_round_trip() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn mixed_endings_with_bom_round_trip() {
     let bytes = with_bom(b"one\ntwo\r\nthree\rfour\n");
     let format = assert_decodes(&bytes, "one\ntwo\r\nthree\rfour\n", true, counts(2, 1, 1));
@@ -183,7 +171,6 @@ fn mixed_endings_with_bom_round_trip() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn newline_is_the_most_common_with_ties_to_lf_then_crlf() {
     let newline = |lf, crlf, cr| counts(lf, crlf, cr).newline();
     assert_eq!(newline(1, 1, 0), LineEnding::Lf);
@@ -196,7 +183,6 @@ fn newline_is_the_most_common_with_ties_to_lf_then_crlf() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn style_from_counts() {
     assert_eq!(counts(0, 0, 0).style(), LineEndingStyle::None);
     assert_eq!(
@@ -217,7 +203,6 @@ fn style_from_counts() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn cr_and_lf_next_to_each_other() {
     // CR then CRLF: a lone CR, then one CRLF.
     assert_decodes(b"\r\r\n", "\r\r\n", false, counts(0, 1, 1));
@@ -230,7 +215,6 @@ fn cr_and_lf_next_to_each_other() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn unicode_breaks_are_not_line_endings() {
     let text = "a\u{2028}b\u{2029}c\u{85}d\u{b}e\u{c}f";
     let format = assert_decodes(text.as_bytes(), text, false, counts(0, 0, 0));
@@ -238,7 +222,6 @@ fn unicode_breaks_are_not_line_endings() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn counts_match_the_buffer_line_count() {
     for text in ["", "a", "a\nb", "a\r\nb\rc\n", "\r\r\n\n\r", "x\u{2028}\n"] {
         let endings = LineEndings::count(text);
@@ -253,7 +236,6 @@ fn counts_match_the_buffer_line_count() {
 // Final newline.
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn final_newline_is_kept() {
     assert_decodes(b"a\nb\n", "a\nb\n", false, counts(2, 0, 0));
     assert_decodes(b"a\r\nb\r\n", "a\r\nb\r\n", false, counts(0, 2, 0));
@@ -261,7 +243,6 @@ fn final_newline_is_kept() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn missing_final_newline_is_not_added() {
     assert_decodes(b"a\nb", "a\nb", false, counts(1, 0, 0));
     assert_decodes(b"a\r\nb", "a\r\nb", false, counts(0, 1, 0));
@@ -272,7 +253,6 @@ fn missing_final_newline_is_not_added() {
 // Encoding.
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn encode_writes_the_bom_and_the_text() {
     let plain = FileFormat::default();
     let bom = FileFormat {
@@ -285,7 +265,6 @@ fn encode_writes_the_bom_and_the_text() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn encode_never_converts_line_endings() {
     // A CRLF file that gained an LF line, say from a paste, saves both as
     // they are. Converting is the editor's job when the text goes in.
@@ -296,7 +275,6 @@ fn encode_never_converts_line_endings() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn typed_newline_goes_back_out_unchanged() {
     // Open a CRLF file, type a line with the file's newline, save.
     let decoded = FileFormat::decode(b"\xEF\xBB\xBFone\r\ntwo\r\n").unwrap();
@@ -313,7 +291,6 @@ fn typed_newline_goes_back_out_unchanged() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn new_file_defaults() {
     let format = FileFormat::default();
     assert!(!format.bom);
@@ -326,7 +303,6 @@ fn new_file_defaults() {
 // Invalid UTF-8.
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn invalid_utf8_at_the_start() {
     // A stray continuation byte.
     assert_invalid_utf8(b"\x80abc", 0);
@@ -340,7 +316,6 @@ fn invalid_utf8_at_the_start() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn invalid_utf8_in_the_middle() {
     // A lead byte followed by a non-continuation byte.
     assert_invalid_utf8(b"ab\xC3(cd", 2);
@@ -355,7 +330,6 @@ fn invalid_utf8_in_the_middle() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn invalid_utf8_at_the_end() {
     // 中 cut after two of its three bytes.
     assert_invalid_utf8(b"abc\xE4\xB8", 3);
@@ -366,7 +340,6 @@ fn invalid_utf8_at_the_end() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn invalid_utf8_offset_counts_the_bom() {
     assert_invalid_utf8(&with_bom(b"\x80"), 3);
     assert_invalid_utf8(&with_bom(b"ab\xFF"), 5);
@@ -376,7 +349,6 @@ fn invalid_utf8_offset_counts_the_bom() {
 // UTF-16.
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn utf16_bom() {
     // "hi\r\n" in UTF-16 with a BOM.
     assert_utf16(b"\xFF\xFEh\0i\0\r\0\n\0", ByteOrder::LittleEndian, true);
@@ -390,7 +362,6 @@ fn utf16_bom() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn utf16_without_bom() {
     // "hi\n" and "café\r\n" in UTF-16 without a BOM: valid UTF-8 full of
     // NULs, which must not decode as text.
@@ -403,7 +374,6 @@ fn utf16_without_bom() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn not_utf16() {
     // One code unit is too little to tell.
     assert_decodes(b"h\0", "h\0", false, counts(0, 0, 0));
@@ -421,7 +391,6 @@ fn not_utf16() {
 }
 
 #[test]
-#[ignore = "T-104: not implemented yet"]
 fn utf16_check_looks_only_at_the_sample() {
     // UTF-16-looking start, ASCII after the sample: still UTF-16.
     let mut bytes = b"a\0".repeat(UTF16_SAMPLE_LEN / 2);

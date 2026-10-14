@@ -30,3 +30,7 @@ criterion = { version = "=0.8.2", default-features = false, features = ["cargo_b
 [[bench]]
 name = "text"
 harness = false
+
+[[bench]]
+name = "encoding"
+harness = false

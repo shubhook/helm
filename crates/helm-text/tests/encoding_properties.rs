@@ -231,7 +231,6 @@ proptest! {
     /// ED-7: valid UTF-8 with or without a BOM and with any mix of line
     /// breaks decodes, and encoding the text gives back the same bytes.
     #[test]
-    #[ignore = "T-104: not implemented yet"]
     fn valid_utf8_round_trips(text in text(400), bom in any::<bool>()) {
         let mut bytes = if bom { BOM.to_vec() } else { Vec::new() };
         bytes.extend_from_slice(text.as_bytes());
@@ -249,7 +248,6 @@ proptest! {
     /// Any valid UTF-8, NULs included, round-trips unless it matches the
     /// UTF-16 rule, in which case it is rejected as UTF-16.
     #[test]
-    #[ignore = "T-104: not implemented yet"]
     fn any_valid_utf8_round_trips_or_is_utf16(text in text_with_nuls(), bom in any::<bool>()) {
         let mut bytes = if bom { BOM.to_vec() } else { Vec::new() };
         bytes.extend_from_slice(text.as_bytes());
@@ -266,7 +264,6 @@ proptest! {
     /// Any bytes decode to exactly what the rules say: the right text and
     /// format, the first invalid UTF-8 offset, or UTF-16. Never a panic.
     #[test]
-    #[ignore = "T-104: not implemented yet"]
     fn any_bytes_follow_the_rules(bytes in bytes()) {
         match oracle(&bytes) {
             Ok((start, bom)) => check_decoded(&bytes, start, bom)?,
@@ -278,7 +275,6 @@ proptest! {
     /// by any bytes past the sample, is rejected as UTF-16 in the right
     /// byte order.
     #[test]
-    #[ignore = "T-104: not implemented yet"]
     fn latin1_as_utf16_is_rejected(
         units in prop::collection::vec(1u8..=0xFF, 2..700),
         big_endian in any::<bool>(),
