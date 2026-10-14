@@ -29,7 +29,6 @@ fn byte_queries(buf: &Buffer, byte: usize) -> Vec<(&'static str, Option<TextErro
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn byte_offset_past_end() {
     let buf = Buffer::from(TEXT);
     for byte in PAST_END {
@@ -44,7 +43,6 @@ fn byte_offset_past_end() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn byte_offset_at_end_is_valid() {
     let buf = Buffer::from(TEXT);
     for (name, got) in byte_queries(&buf, 10) {
@@ -53,7 +51,6 @@ fn byte_offset_at_end_is_valid() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn byte_offset_inside_a_character() {
     let buf = Buffer::from(TEXT);
     for byte in INSIDE_CHAR {
@@ -65,7 +62,6 @@ fn byte_offset_inside_a_character() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn byte_offset_on_empty_buffer() {
     let buf = Buffer::new();
     let want = Some(TextError::ByteOutOfBounds { offset: 1, len: 0 });
@@ -75,7 +71,6 @@ fn byte_offset_on_empty_buffer() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn char_offset_past_end() {
     let buf = Buffer::from(TEXT);
     assert_eq!(buf.char_to_byte(4), Ok(10));
@@ -91,7 +86,6 @@ fn char_offset_past_end() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn utf16_offset_past_end() {
     let buf = Buffer::from(TEXT);
     assert_eq!(buf.utf16_to_byte(5), Ok(10));
@@ -107,7 +101,6 @@ fn utf16_offset_past_end() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn utf16_offset_inside_surrogate_pair() {
     let buf = Buffer::from(TEXT);
     assert_eq!(buf.utf16_to_byte(3), Ok(6));
@@ -118,7 +111,6 @@ fn utf16_offset_inside_surrogate_pair() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn line_past_end() {
     let buf = Buffer::from("ab\ncd");
     for line in [2, usize::MAX] {
@@ -136,7 +128,6 @@ fn line_past_end() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn column_past_end_of_line() {
     let buf = Buffer::from("ab\ncd");
     // Line 0's last column is 2, the position of its LF. Column 3 would be
@@ -160,7 +151,6 @@ fn column_past_end_of_line() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn column_past_end_of_crlf_line() {
     let buf = Buffer::from("ab\r\ncd");
     // Column 3 sits between the CR and the LF, which is a valid offset.
@@ -172,7 +162,6 @@ fn column_past_end_of_crlf_line() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn column_past_end_of_line_with_wide_characters() {
     // Line 0 is 9 bytes but 4 UTF-16 code units before its LF.
     let buf = Buffer::from("é中😀\nx");
@@ -192,7 +181,6 @@ fn column_past_end_of_line_with_wide_characters() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn byte_column_inside_a_character() {
     // é(0..2) 中(2..5) 😀(5..9) \n(9) é(10..12)
     let buf = Buffer::from("é中😀\né");
@@ -211,7 +199,6 @@ fn byte_column_inside_a_character() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn utf16_column_inside_surrogate_pair() {
     let buf = Buffer::from("😀\nx😀");
     assert_eq!(
@@ -229,7 +216,6 @@ fn utf16_column_inside_surrogate_pair() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn bad_slice_ranges() {
     let buf = Buffer::from(TEXT);
     assert_eq!(
@@ -263,7 +249,6 @@ fn bad_slice_ranges() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn rejected_insert_leaves_buffer_unchanged() {
     let mut buf = Buffer::from(TEXT);
     for byte in PAST_END {
@@ -286,7 +271,6 @@ fn rejected_insert_leaves_buffer_unchanged() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn rejected_delete_leaves_buffer_unchanged() {
     let mut buf = Buffer::from(TEXT);
     assert_eq!(

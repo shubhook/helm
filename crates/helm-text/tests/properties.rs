@@ -192,14 +192,12 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     #[test]
-    #[ignore = "T-101: not implemented yet"]
     fn conversions_match_the_oracle(text in large_text(), samples in samples()) {
         let buf = Buffer::from(text.as_str());
         check_against_oracle(&buf, &text, &samples)?;
     }
 
     #[test]
-    #[ignore = "T-101: not implemented yet"]
     fn conversions_round_trip(text in large_text(), samples in samples()) {
         let buf = Buffer::from(text.as_str());
         let oracle = Oracle::new(&text);
@@ -233,7 +231,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-101: not implemented yet"]
     fn invalid_offsets_error(text in large_text(), samples in samples()) {
         let buf = Buffer::from(text.as_str());
         let oracle = Oracle::new(&text);
@@ -287,7 +284,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-101: not implemented yet"]
     fn slices_match_the_oracle(text in large_text(), a in any::<Index>(), b in any::<Index>()) {
         let buf = Buffer::from(text.as_str());
         let oracle = Oracle::new(&text);
@@ -297,7 +293,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-101: not implemented yet"]
     fn edits_match_the_oracle(
         text in large_text(),
         edits in prop::collection::vec(edit(), 1..40),
