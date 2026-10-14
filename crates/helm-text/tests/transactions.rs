@@ -44,7 +44,6 @@ const REVERSED: (usize, usize) = (3, 1);
 const WIDE: &str = "aé中😀";
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn added_buffers_keep_their_text() {
     let (set, ids) = set_of(&["", "hello", "a\r\nb"]);
     assert_eq!(text(&set, ids[0]), "");
@@ -58,7 +57,6 @@ fn added_buffers_keep_their_text() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn edit_constructors() {
     let (_, ids) = set_of(&["abc"]);
     let a = ids[0];
@@ -82,7 +80,6 @@ fn edit_constructors() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn single_buffer_edits() {
     let (mut set, ids) = set_of(&["hello world"]);
     let a = ids[0];
@@ -101,7 +98,6 @@ fn single_buffer_edits() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn apply_returns_increasing_ids() {
     let (mut set, ids) = set_of(&["", "x"]);
     let t1 = set.apply(edits(ids[0], &[(0..0, "a")]).into()).unwrap();
@@ -112,7 +108,6 @@ fn apply_returns_increasing_ids() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn offsets_refer_to_the_text_before_the_transaction() {
     // Read against the old text, these remove "ab" and "cd". Read one after
     // another, the second would remove "ef" instead.
@@ -144,7 +139,6 @@ fn offsets_refer_to_the_text_before_the_transaction() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn inserts_at_one_offset_keep_their_order() {
     let (mut set, ids) = set_of(&["ac", "ac"]);
     apply(&mut set, edits(ids[0], &[(1..1, "x"), (1..1, "y")])).unwrap();
@@ -154,7 +148,6 @@ fn inserts_at_one_offset_keep_their_order() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn inserts_at_the_ends_of_a_replaced_range() {
     // An insert at the start of the range lands before the replacement, one
     // at its end after it, whatever the listing order.
@@ -180,7 +173,6 @@ fn inserts_at_the_ends_of_a_replaced_range() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn edits_across_wide_characters_and_line_breaks() {
     // é(0..2) \r(2) \n(3) 中(4..7) 😀(7..11).
     let (mut set, ids) = set_of(&["é\r\n中😀"]);
@@ -192,7 +184,6 @@ fn edits_across_wide_characters_and_line_breaks() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn one_transaction_edits_several_buffers() {
     // A rename across two files, listed out of buffer order. The third
     // buffer isn't touched.
@@ -210,7 +201,6 @@ fn one_transaction_edits_several_buffers() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn equal_ranges_in_different_buffers_do_not_overlap() {
     let (mut set, ids) = set_of(&["abc", "abc"]);
     let both = vec![
@@ -223,7 +213,6 @@ fn equal_ranges_in_different_buffers_do_not_overlap() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn edits_that_change_nothing_still_apply() {
     let (mut set, ids) = set_of(&["abc"]);
     let a = ids[0];
@@ -233,7 +222,6 @@ fn edits_that_change_nothing_still_apply() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn empty_transaction_is_rejected() {
     let (mut set, ids) = set_of(&["abc"]);
     assert_eq!(set.apply(Transaction::new()), Err(TransactionError::Empty));
@@ -242,7 +230,6 @@ fn empty_transaction_is_rejected() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn unknown_buffer_is_rejected() {
     let (mut set, ids) = set_of(&["abc"]);
     let a = ids[0];
@@ -266,7 +253,6 @@ fn unknown_buffer_is_rejected() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn invalid_ranges_are_rejected() {
     let (start, end) = REVERSED;
     let cases = [
@@ -333,7 +319,6 @@ fn invalid_ranges_are_rejected() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn overlapping_edits_are_rejected() {
     let overlap = |edit, other| Err(TransactionError::Overlap { edit, other });
     let cases: [(EditList, _); 5] = [
@@ -363,7 +348,6 @@ fn overlapping_edits_are_rejected() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn the_first_failing_edit_is_reported() {
     let (_, other) = set_of(&["x", "y"]);
     let unknown = other[1];
@@ -412,7 +396,6 @@ fn the_first_failing_edit_is_reported() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_failed_transaction_changes_no_buffer() {
     let (mut set, ids) = set_of(&["one", "two", "three"]);
     let (a, b, c) = (ids[0], ids[1], ids[2]);
