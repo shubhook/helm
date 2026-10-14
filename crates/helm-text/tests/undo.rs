@@ -37,7 +37,6 @@ fn append(set: &mut BufferSet, ids: &[BufferId], suffix: &str) -> TransactionId 
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn undo_and_redo_one_transaction() {
     let (mut set, ids) = set_of(&["hello"]);
     let a = ids[0];
@@ -50,7 +49,6 @@ fn undo_and_redo_one_transaction() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn nothing_to_undo_or_redo() {
     let (mut set, ids) = set_of(&["x"]);
     let a = ids[0];
@@ -67,7 +65,6 @@ fn nothing_to_undo_or_redo() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn undo_and_redo_chains() {
     let (mut set, ids) = set_of(&[""]);
     let a = ids[0];
@@ -95,7 +92,6 @@ fn undo_and_redo_chains() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn undo_restores_the_text_exactly() {
     // é(0..2) \r(2) \n(3) 中(4..7) 😀(7..11).
     let start = "é\r\n中😀";
@@ -119,7 +115,6 @@ fn undo_restores_the_text_exactly() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn one_undo_reverts_every_buffer_a_transaction_touched() {
     let starts = ["a", "b", "c", "d", "e"];
     let (mut set, ids) = set_of(&starts);
@@ -148,7 +143,6 @@ fn one_undo_reverts_every_buffer_a_transaction_touched() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn histories_are_per_buffer() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -164,7 +158,6 @@ fn histories_are_per_buffer() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_transaction_that_changes_nothing_is_recorded() {
     let (mut set, ids) = set_of(&["abc"]);
     let a = ids[0];
@@ -177,7 +170,6 @@ fn a_transaction_that_changes_nothing_is_recorded() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_new_transaction_drops_redo() {
     let (mut set, ids) = set_of(&[""]);
     let a = ids[0];
@@ -195,7 +187,6 @@ fn a_new_transaction_drops_redo() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_new_transaction_keeps_redo_of_other_buffers() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -209,7 +200,6 @@ fn a_new_transaction_keeps_redo_of_other_buffers() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_dropped_transaction_leaves_every_redo_history() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -226,7 +216,6 @@ fn a_dropped_transaction_leaves_every_redo_history() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn dropping_redo_also_drops_what_depends_on_it() {
     let (mut set, ids) = set_of(&["a", "b", "c"]);
     let (a, b, c) = (ids[0], ids[1], ids[2]);
@@ -252,7 +241,6 @@ fn dropping_redo_also_drops_what_depends_on_it() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_later_transaction_blocks_undo() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -282,7 +270,6 @@ fn a_later_transaction_blocks_undo() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_blocked_undo_names_the_lowest_blocking_buffer() {
     let (mut set, ids) = set_of(&["a", "b", "c"]);
     let (a, b, c) = (ids[0], ids[1], ids[2]);
@@ -319,7 +306,6 @@ fn a_blocked_undo_names_the_lowest_blocking_buffer() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_later_transaction_blocks_redo() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -347,7 +333,6 @@ fn a_later_transaction_blocks_redo() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn unknown_buffer() {
     let (mut set, _) = set_of(&["a"]);
     let (_, other) = set_of(&["x", "y"]);
@@ -358,7 +343,6 @@ fn unknown_buffer() {
 }
 
 #[test]
-#[ignore = "T-102: not implemented yet"]
 fn a_failed_transaction_keeps_redo() {
     let (mut set, ids) = set_of(&["abc"]);
     let a = ids[0];

@@ -85,6 +85,11 @@ impl Transaction {
     pub fn edits(&self) -> &[Edit] {
         &self.edits
     }
+
+    /// The edits, in the order they were added, by value.
+    pub(crate) fn into_edits(self) -> Vec<Edit> {
+        self.edits
+    }
 }
 
 impl From<Vec<Edit>> for Transaction {

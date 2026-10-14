@@ -47,6 +47,20 @@ impl Buffer {
         Ok(())
     }
 
+    /// Replaces the byte range `range` with `text`. The caller has already
+    /// checked `range` the way [`TextBuffer::slice`] does: an unchecked
+    /// range makes the rope panic.
+    pub(crate) fn splice(&mut self, range: Range<usize>, text: &str) {
+        let start = self.rope.byte_to_char(range.start);
+        if range.start < range.end {
+            let end = self.rope.byte_to_char(range.end);
+            self.rope.remove(start..end);
+        }
+        if !text.is_empty() {
+            self.rope.insert(start, text);
+        }
+    }
+
     /// Checks that `byte` is at most the length and on a char boundary.
     fn check_byte(&self, byte: usize) -> Result<(), TextError> {
         let len = self.rope.len_bytes();
