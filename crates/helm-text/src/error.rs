@@ -1,6 +1,8 @@
-//! The error every fallible `helm-text` call returns.
+//! The errors `helm-text` calls return.
 
 use std::fmt;
+
+use crate::{BufferId, TransactionId};
 
 /// Why an offset, position or range was rejected.
 ///
@@ -100,3 +102,97 @@ impl fmt::Display for TextError {
 }
 
 impl std::error::Error for TextError {}
+
+/// Why [`BufferSet::apply`](crate::BufferSet::apply) rejected a transaction.
+///
+/// `edit` and `other` are indexes into
+/// [`Transaction::edits`](crate::Transaction::edits). A rejected transaction
+/// changes nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TransactionError {
+    /// The transaction has no edits.
+    Empty,
+    /// An edit names a buffer that isn't in the set.
+    UnknownBuffer {
+        /// The edit's index.
+        edit: usize,
+        /// The buffer it names.
+        buffer: BufferId,
+    },
+    /// An edit's range isn't valid in its buffer's text before the
+    /// transaction.
+    InvalidRange {
+        /// The edit's index.
+        edit: usize,
+        /// What [`TextBuffer::slice`](crate::TextBuffer::slice) returns for
+        /// the same range of the same text.
+        error: TextError,
+    },
+    /// An edit overlaps an earlier edit on the same buffer.
+    Overlap {
+        /// The later edit's index.
+        edit: usize,
+        /// The index of the earliest edit it overlaps.
+        other: usize,
+    },
+}
+
+impl fmt::Display for TransactionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Empty => write!(f, "the transaction has no edits"),
+            Self::UnknownBuffer { edit, buffer } => {
+                write!(f, "edit {edit} names {buffer:?}, which isn't in the set")
+            }
+            Self::InvalidRange { edit, error } => write!(f, "edit {edit}: {error}"),
+            Self::Overlap { edit, other } => write!(f, "edit {edit} overlaps edit {other}"),
+        }
+    }
+}
+
+impl std::error::Error for TransactionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidRange { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+}
+
+/// Why [`BufferSet::undo`](crate::BufferSet::undo) or
+/// [`BufferSet::redo`](crate::BufferSet::redo) did nothing. Either way, no
+/// buffer and no history changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HistoryError {
+    /// The buffer isn't in the set.
+    UnknownBuffer {
+        /// The buffer that was asked for.
+        buffer: BufferId,
+    },
+    /// The transaction touched another buffer whose history has a later
+    /// transaction on top, so undoing or redoing it would split it.
+    Blocked {
+        /// The transaction that couldn't be undone or redone.
+        transaction: TransactionId,
+        /// The touched buffer, lowest id first, whose history has a later
+        /// transaction on top. Undo or redo this buffer first.
+        buffer: BufferId,
+    },
+}
+
+impl fmt::Display for HistoryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::UnknownBuffer { buffer } => write!(f, "{buffer:?} isn't in the set"),
+            Self::Blocked {
+                transaction,
+                buffer,
+            } => write!(
+                f,
+                "{transaction:?} can't be undone or redone in part, and {buffer:?} has a later transaction on top"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for HistoryError {}

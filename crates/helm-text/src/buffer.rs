@@ -10,8 +10,8 @@ use crate::{Point, TextBuffer, TextError, Utf16Point};
 /// An editable text buffer backed by a rope.
 ///
 /// Cloning is cheap: clones share the rope's nodes until one of them is
-/// edited. Transactions and undo come in T-102; this type has only the plain
-/// edits.
+/// edited. Transactions and undo live in [`BufferSet`](crate::BufferSet),
+/// which owns its buffers; this type has only the plain edits.
 #[derive(Clone, Debug, Default)]
 pub struct Buffer {
     rope: Rope,
