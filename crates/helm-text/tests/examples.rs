@@ -12,7 +12,6 @@ fn assert_lens(buf: &Buffer, bytes: usize, chars: usize, utf16: usize, lines: us
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn empty_buffer() {
     for buf in [Buffer::new(), Buffer::from(""), Buffer::default()] {
         assert_lens(&buf, 0, 0, 0, 1);
@@ -33,7 +32,6 @@ fn empty_buffer() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn ascii() {
     let buf = Buffer::from("hello\nworld");
     assert_lens(&buf, 11, 11, 11, 2);
@@ -57,7 +55,6 @@ fn ascii() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn two_byte_character() {
     // c a f é(2 bytes) \n
     let buf = Buffer::from("café\n");
@@ -74,7 +71,6 @@ fn two_byte_character() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn three_byte_character() {
     // a 中(3 bytes) b
     let buf = Buffer::from("a中b");
@@ -89,7 +85,6 @@ fn three_byte_character() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn surrogate_pair_character() {
     // a 😀(4 bytes, 2 UTF-16 code units) b
     let buf = Buffer::from("a😀b");
@@ -107,7 +102,6 @@ fn surrogate_pair_character() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn mixed_widths_across_lines() {
     // é(0..2) 中(2..5) 😀(5..9) \n(9) x(10)
     let buf = Buffer::from("é中😀\nx");
@@ -123,7 +117,6 @@ fn mixed_widths_across_lines() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn lf_line_breaks() {
     let buf = Buffer::from("a\nb\n\nc");
     assert_lens(&buf, 6, 6, 6, 4);
@@ -138,7 +131,6 @@ fn lf_line_breaks() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn crlf_is_one_line_break() {
     let buf = Buffer::from("a\r\nb");
     assert_lens(&buf, 4, 4, 4, 2);
@@ -163,7 +155,6 @@ fn crlf_is_one_line_break() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn lone_cr_is_a_line_break() {
     let buf = Buffer::from("a\rb\rc");
     assert_lens(&buf, 5, 5, 5, 3);
@@ -175,7 +166,6 @@ fn lone_cr_is_a_line_break() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn mixed_line_breaks() {
     // LF then CR is two breaks, not a CRLF.
     let buf = Buffer::from("\n\r");
@@ -198,7 +188,6 @@ fn mixed_line_breaks() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn trailing_newline_makes_an_empty_last_line() {
     let buf = Buffer::from("a\n");
     assert_lens(&buf, 2, 2, 2, 2);
@@ -218,7 +207,6 @@ fn trailing_newline_makes_an_empty_last_line() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn unicode_line_breaks_are_not_line_breaks() {
     // U+2028 LINE SEPARATOR is 3 bytes and 1 UTF-16 code unit.
     let buf = Buffer::from("a\u{2028}b");
@@ -236,7 +224,6 @@ fn unicode_line_breaks_are_not_line_breaks() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn insert_and_delete() {
     let mut buf = Buffer::new();
     buf.insert(0, "ac").unwrap();
@@ -256,7 +243,6 @@ fn insert_and_delete() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn edits_that_split_or_join_a_crlf() {
     // Inserting between CR and LF splits one break into two.
     let mut buf = Buffer::from("a\r\nb");
@@ -285,7 +271,6 @@ fn edits_that_split_or_join_a_crlf() {
 }
 
 #[test]
-#[ignore = "T-101: not implemented yet"]
 fn clones_are_independent() {
     let mut buf = Buffer::from("abc");
     let copy = buf.clone();
