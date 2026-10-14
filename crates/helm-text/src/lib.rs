@@ -39,12 +39,27 @@
 //! between the CR and LF of a CRLF a valid column (it is a valid byte
 //! offset, and editing there must work), while the position after the line
 //! break belongs to the next line as column 0.
+//!
+//! # Transactions and undo
+//!
+//! A [`BufferSet`] owns buffers and changes them only through a
+//! [`Transaction`]: a list of [`Edit`]s, each replacing a byte range of one
+//! buffer, that applies, undoes and redoes as one unit. One transaction can
+//! touch several buffers, so an LSP rename or an agent's change across many
+//! files undoes in one step. Edit ranges refer to the text before the
+//! transaction. Each buffer has its own undo and redo history, and a
+//! transaction that touched several buffers is undone in all of them or in
+//! none. [`BufferSet`] documents the full rules.
 
 mod buffer;
+mod buffer_set;
 mod error;
+mod transaction;
 
 pub use buffer::Buffer;
-pub use error::TextError;
+pub use buffer_set::BufferSet;
+pub use error::{HistoryError, TextError, TransactionError};
+pub use transaction::{BufferId, Edit, Transaction, TransactionId};
 
 /// A position as a line and a column in bytes from the start of that line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
