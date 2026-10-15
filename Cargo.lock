@@ -326,6 +326,7 @@ name = "helm-bench"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "helm-editor",
  "helm-text",
  "serde_json",
  "toml",

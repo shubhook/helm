@@ -246,7 +246,6 @@ proptest! {
 
     /// ED-3: N cursors typing give the same text as N single edits.
     #[test]
-    #[ignore = "T-105: not implemented yet"]
     fn typing_at_n_cursors_matches_n_single_edits(
         start in text(24),
         (picks, primary) in picks(),
@@ -268,7 +267,6 @@ proptest! {
     /// Newline at N cursors is the file's newline typed at each, and gives
     /// the same text as N single newlines.
     #[test]
-    #[ignore = "T-105: not implemented yet"]
     fn newline_at_n_cursors_matches_n_single_edits(
         start in text(24),
         (picks, primary) in picks(),
@@ -286,7 +284,6 @@ proptest! {
 
     /// Backspace at N cursors matches the oracle, text and cursors.
     #[test]
-    #[ignore = "T-105: not implemented yet"]
     fn delete_backward_matches_the_oracle(
         start in text(24),
         (picks, primary) in picks(),
@@ -310,7 +307,6 @@ proptest! {
 
     /// Delete at N cursors matches the oracle, text and cursors.
     #[test]
-    #[ignore = "T-105: not implemented yet"]
     fn delete_forward_matches_the_oracle(
         start in text(24),
         (picks, primary) in picks(),
@@ -335,7 +331,6 @@ proptest! {
     /// Any list of selections, in any order and overlapping, comes out in
     /// the normal form `Selections` documents.
     #[test]
-    #[ignore = "T-105: not implemented yet"]
     fn any_selections_normalize(
         raw in prop::collection::vec((0usize..40, 0usize..40, prop::bool::weighted(0.4)), 1..12),
         primary in any::<Index>(),
@@ -426,7 +421,6 @@ proptest! {
     /// before each command, in reverse order; redoing puts back the ones
     /// from after.
     #[test]
-    #[ignore = "T-105: not implemented yet"]
     fn undo_and_redo_restore_text_and_selections(
         start in text(16),
         ops in prop::collection::vec(op(), 1..24),

@@ -44,7 +44,6 @@ fn assert_sels(editor: &Editor, expected: &[Selection], primary: usize) {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_selects_the_word_first() {
     let (set, mut editor) = setup("foo bar foo", &[c(1)], 0);
     assert_eq!(editor.add_next_match(&set), Ok(true));
@@ -60,7 +59,6 @@ fn add_next_match_selects_the_word_first() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_wraps_to_the_start() {
     let (set, mut editor) = setup("foo bar foo", &[s(8, 11)], 0);
     assert_eq!(editor.add_next_match(&set), Ok(true));
@@ -68,7 +66,6 @@ fn add_next_match_wraps_to_the_start() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_only_touches_the_primary() {
     // A second cursor elsewhere stays a cursor while the primary becomes
     // its word.
@@ -83,7 +80,6 @@ fn add_next_match_only_touches_the_primary() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_without_a_word() {
     // Between ',' and ' ': no word on either side.
     let (set, mut editor) = setup("foo, bar", &[c(4)], 0);
@@ -107,7 +103,6 @@ fn add_next_match_without_a_word() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_with_multibyte_words() {
     // café is 0..5 (é is 3..5), 中文 6..12, café 13..18, 😀 19..23.
     let text = "café 中文 café 😀";
@@ -133,7 +128,6 @@ fn add_next_match_with_multibyte_words() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_from_a_selection() {
     // The selection's text is the search, not a word: "o b" here.
     let (set, mut editor) = setup("foo bar, foo bar", &[s(2, 5)], 0);
@@ -157,7 +151,6 @@ fn add_next_match_from_a_selection() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_next_match_skips_overlapping_occurrences() {
     // "aa" occurs at 0, 1, 2 and 3. From 0..2, the next one that doesn't
     // overlap is 2..4, which only touches it.
@@ -176,7 +169,6 @@ fn add_next_match_skips_overlapping_occurrences() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn select_all_matches_of_the_word() {
     let (set, mut editor) = setup("foo bar foo baz foo", &[c(9)], 0);
     assert_eq!(editor.select_all_matches(&set), Ok(true));
@@ -188,7 +180,6 @@ fn select_all_matches_of_the_word() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn select_all_matches_replaces_other_selections() {
     let (set, mut editor) = setup("x foo y foo", &[s(0, 1), s(5, 2)], 1);
     assert_eq!(editor.select_all_matches(&set), Ok(true));
@@ -196,7 +187,6 @@ fn select_all_matches_replaces_other_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn select_all_matches_never_overlap() {
     // From the start: 0..2, then 2..4. The primary is the first one that
     // overlaps the old one, 1..3.
@@ -206,7 +196,6 @@ fn select_all_matches_never_overlap() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn select_all_matches_without_a_word() {
     let (set, mut editor) = setup("a  b", &[c(2)], 0);
     assert_eq!(editor.select_all_matches(&set), Ok(false));
@@ -214,7 +203,6 @@ fn select_all_matches_without_a_word() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn select_all_matches_then_type() {
     // Plain matches, not whole words: the foo in foo_bar is selected too.
     let (mut set, mut editor) = setup("foo(foo, foo_bar)", &[c(0)], 0);
@@ -231,7 +219,6 @@ fn select_all_matches_then_type() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn select_all_matches_with_multibyte_text() {
     // 中 0..3, 文 3..6, é 6..8, 😀 8..12, then 中文 again at 12..18. é is a
     // word character, so the word around 3 is 中文é, which occurs once.
@@ -245,7 +232,6 @@ fn select_all_matches_with_multibyte_text() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_below_builds_a_column() {
     let (set, mut editor) = setup("abcd\nabcd\nabcd", &[c(2)], 0);
     assert_eq!(editor.add_cursor_below(&set), Ok(true));
@@ -261,7 +247,6 @@ fn add_cursor_below_builds_a_column() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_above_builds_a_column() {
     let (set, mut editor) = setup("abcd\nabcd\nabcd", &[c(12)], 0);
     assert_eq!(editor.add_cursor_above(&set), Ok(true));
@@ -272,7 +257,6 @@ fn add_cursor_above_builds_a_column() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_counts_columns_in_chars() {
     // Line 0 is a😀bc (a 0, 😀 1..5, b 5, c 6, LF 7). Line 1 is x (x 8,
     // LF 9). Line 2 is é中文字 (é 10..12, 中 12..15, 文 15..18, 字 18..21).
@@ -300,7 +284,6 @@ fn add_cursor_counts_columns_in_chars() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_around_crlf_and_cr() {
     // a 0, b 1, CR 2, LF 3, c 4, d 5, CR 6, LF 7, e 8, f 9.
     let text = "ab\r\ncd\r\nef";
@@ -326,7 +309,6 @@ fn add_cursor_around_crlf_and_cr() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_uses_the_head() {
     // Head at 3: the new cursor is at column 3 of line 1.
     let (set, mut editor) = setup("abcd\nabcd", &[s(0, 3)], 0);
@@ -340,7 +322,6 @@ fn add_cursor_uses_the_head() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_merges_into_existing_selections() {
     // The cursor at 1 adds 6, inside 5..9, which absorbs it. The primary is
     // on the last line and adds nothing, so nothing changes.
@@ -356,7 +337,6 @@ fn add_cursor_merges_into_existing_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn add_cursor_on_one_line() {
     let (set, mut editor) = setup("abc", &[c(1)], 0);
     assert_eq!(editor.add_cursor_above(&set), Ok(false));

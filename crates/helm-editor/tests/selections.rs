@@ -27,7 +27,6 @@ fn assert_sels(actual: &Selections, expected: &[Selection], primary: usize) {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn selection_accessors() {
     let left = s(5, 2);
     assert_eq!((left.start(), left.end(), left.range()), (2, 5, 2..5));
@@ -49,7 +48,6 @@ fn selection_accessors() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn new_rejects_empty_input_and_bad_primary() {
     assert_eq!(Selections::new(Vec::new(), 0), None);
     assert_eq!(Selections::new(vec![c(1)], 1), None);
@@ -57,7 +55,6 @@ fn new_rejects_empty_input_and_bad_primary() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn new_sorts_by_start() {
     let set = sels(&[c(9), s(2, 4), c(0)], 0);
     assert_sels(&set, &[c(0), s(2, 4), c(9)], 2);
@@ -67,7 +64,6 @@ fn new_sorts_by_start() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn equal_cursors_merge() {
     let set = sels(&[c(3), c(3), c(1)], 1);
     assert_sels(&set, &[c(1), c(3)], 1);
@@ -77,7 +73,6 @@ fn equal_cursors_merge() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn overlapping_selections_merge() {
     assert_sels(&sels(&[s(0, 4), s(2, 6)], 0), &[s(0, 6)], 0);
     // One inside another.
@@ -89,7 +84,6 @@ fn overlapping_selections_merge() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn a_cursor_touching_a_selection_merges() {
     // At its end.
     assert_sels(&sels(&[s(2, 5), c(5)], 1), &[s(2, 5)], 0);
@@ -102,7 +96,6 @@ fn a_cursor_touching_a_selection_merges() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn non_empty_selections_that_only_touch_stay_apart() {
     let set = sels(&[s(1, 2), s(0, 1), s(2, 3)], 0);
     assert_sels(&set, &[s(0, 1), s(1, 2), s(2, 3)], 1);
@@ -112,7 +105,6 @@ fn non_empty_selections_that_only_touch_stay_apart() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn a_cursor_where_two_selections_touch_joins_all_three() {
     assert_sels(&sels(&[s(2, 5), s(5, 8), c(5)], 0), &[s(2, 8)], 0);
     assert_sels(&sels(&[c(5), s(8, 5), s(5, 2)], 0), &[s(8, 2)], 0);
@@ -121,7 +113,6 @@ fn a_cursor_where_two_selections_touch_joins_all_three() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn merging_chains_through_several_selections() {
     // 0..3 and 2..5 overlap, the result overlaps 4..8, and the cursor at 8
     // touches that. 9..10 stays apart.
@@ -134,7 +125,6 @@ fn merging_chains_through_several_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn merged_direction_follows_the_primary_then_input_order() {
     // The primary is in the group and not empty: its direction wins.
     assert_sels(&sels(&[s(0, 3), s(5, 2)], 1), &[s(5, 0)], 0);
@@ -150,7 +140,6 @@ fn merged_direction_follows_the_primary_then_input_order() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn push_adds_a_selection_and_makes_it_primary() {
     let mut set = Selections::single(c(5));
     set.push(c(1));
@@ -176,7 +165,6 @@ fn push_adds_a_selection_and_makes_it_primary() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn offsets_are_not_checked() {
     // `Selections` is plain data: offsets are checked against a buffer only
     // when an editor command uses them.
