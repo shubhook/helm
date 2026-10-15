@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b0378baa324a15da4612da9ac046eae1f1554022f47818f2517a164a66aeb224 # shrinks to start = "", ops = [Type("")]
+cc 836e751077a62133a152ca7aa92b36a2aca895262f7a95565a41b90b0bd4ad40 # shrinks to raw = [(0, 0, false)], primary = Index(0)
+cc c060519861d2731a6b9ade7871b002f2121f1fb2d516be1e41071725475b9cc3 # shrinks to start = "", (picks, primary) = ([(Index(0), None)], Index(0))
+cc 0fa245c29f9b2fb658cd7f4c3482dcc0bb3e384cbf066f84c748fd6ac27bd426 # shrinks to start = "", (picks, primary) = ([(Index(0), None)], Index(0))
+cc d4f257ca1b72b65dcb9a613475f881e12be3b4f37ddf4a9d930d4b806d73408a # shrinks to start = "", (picks, primary) = ([(Index(0), None)], Index(0))
+cc dac1812888841356a9c8ad6f84cfb2caf2302ecb48cf3b55598e21839e279e64 # shrinks to start = "", (picks, primary) = ([(Index(0), None)], Index(0)), typed = ""

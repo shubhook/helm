@@ -9,3 +9,7 @@ publish = false
 
 [dependencies]
 helm-text = { path = "../helm-text" }
+
+[dev-dependencies]
+# Property tests for T-105's acceptance tests. Same version as helm-text's.
+proptest = "=1.12.0"
