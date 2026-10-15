@@ -2,3 +2,4 @@
 .DS_Store
 *.profraw
 __pycache__/
+*.proptest-regressions
