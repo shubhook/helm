@@ -1,17 +1,11 @@
 //! Turning key events into commands: the active keymap, each editor's key
 //! state, and the rule that picks a binding.
 
-#![expect(
-    unused_variables,
-    dead_code,
-    reason = "T-106 interface stubs; the implementation deletes this"
-)]
-
 use helm_text::BufferSet;
 
 use crate::{
-    CommandError, CommandId, CommandRegistry, Editor, Invocation, KeyEvent, Keymap, Keystroke,
-    ModeId,
+    Action, Binding, CommandArgs, CommandError, CommandId, CommandRegistry, Editor, Invocation,
+    KeyEvent, Keymap, Keystroke, ModeId, Typing,
 };
 
 /// One editor's input state: its mode, the keys of a chord typed so far,
@@ -35,18 +29,18 @@ pub struct KeyState {
 impl KeyState {
     /// The current mode.
     pub fn mode(&self) -> &ModeId {
-        todo!()
+        &self.mode
     }
 
     /// The keys of the chord typed so far, or an empty slice if no chord is
     /// pending. `helm-ui` shows these while it waits for the next key.
     pub fn pending(&self) -> &[Keystroke] {
-        todo!()
+        &self.pending
     }
 
     /// The pending operator, if one is held.
     pub fn operator(&self) -> Option<&CommandId> {
-        todo!()
+        self.operator.as_ref().map(|(command, _)| command)
     }
 
     /// Drops the pending chord and the pending operator, and returns to the
@@ -54,7 +48,15 @@ impl KeyState {
     /// anything was pending. `helm-ui` calls this when the editor loses
     /// focus or the user clicks in it.
     pub fn cancel(&mut self) -> bool {
-        todo!()
+        let chord = !self.pending.is_empty();
+        self.pending.clear();
+        match self.operator.take() {
+            Some((_, mode)) => {
+                self.mode = mode;
+                true
+            }
+            None => chord,
+        }
     }
 }
 
@@ -111,29 +113,39 @@ pub struct Dispatcher {
 impl Dispatcher {
     /// A dispatcher running commands from `registry`, with `keymap` active.
     pub fn new(registry: CommandRegistry, keymap: Keymap) -> Self {
-        todo!()
+        Self {
+            registry,
+            keymap,
+            generation: 0,
+        }
     }
 
     /// The command registry.
     pub fn registry(&self) -> &CommandRegistry {
-        todo!()
+        &self.registry
     }
 
     /// The active keymap.
     pub fn keymap(&self) -> &Keymap {
-        todo!()
+        &self.keymap
     }
 
     /// Makes `keymap` the active keymap and returns the old one. See the
     /// type docs for what happens to each editor's state.
     pub fn set_keymap(&mut self, keymap: Keymap) -> Keymap {
-        todo!()
+        self.generation += 1;
+        std::mem::replace(&mut self.keymap, keymap)
     }
 
     /// A new state for one editor: in the active keymap's initial mode,
     /// with nothing pending.
     pub fn key_state(&self) -> KeyState {
-        todo!()
+        KeyState {
+            mode: self.keymap.initial_mode().clone(),
+            pending: Vec::new(),
+            operator: None,
+            generation: self.generation,
+        }
     }
 
     /// Brings `state` up to date with the active keymap, as the type docs
@@ -141,7 +153,14 @@ impl Dispatcher {
     /// calls this on every open editor after a switch, so a status bar
     /// shows the right mode before the next key.
     pub fn sync(&self, state: &mut KeyState) {
-        todo!()
+        if state.generation == self.generation {
+            return;
+        }
+        state.cancel();
+        if self.keymap.mode(state.mode.as_str()).is_none() {
+            state.mode = self.keymap.initial_mode().clone();
+        }
+        state.generation = self.generation;
     }
 
     /// Resolves one key event against the active keymap, updates `state`,
@@ -193,7 +212,90 @@ impl Dispatcher {
     /// Mode changes happen here, before the caller runs the returned
     /// command, and stand even if the command then fails.
     pub fn resolve(&self, state: &mut KeyState, event: &KeyEvent, contexts: &[&str]) -> Resolution {
-        todo!()
+        self.sync(state);
+        let keystroke = event.keystroke;
+        let depth = state.pending.len();
+        let first = state.pending.first().copied().unwrap_or(keystroke);
+
+        // Rules 1 and 2: look for a longer binding, and rank the exact ones.
+        let mut prefix = false;
+        let mut winner: Option<((bool, bool), &Binding)> = None;
+        for binding in self.keymap.bindings_starting_with(first) {
+            let keys = binding.keys.as_slice();
+            if keys.len() <= depth
+                || keys[depth] != keystroke
+                || keys[..depth] != state.pending[..]
+                || !applies(binding, &state.mode, contexts)
+            {
+                continue;
+            }
+            if keys.len() > depth + 1 {
+                prefix = true;
+                break;
+            }
+            // Later bindings come later, so `>=` lets one of equal rank win.
+            let rank = (binding.mode.is_some(), binding.context.is_some());
+            if winner.is_none_or(|(best, _)| rank >= best) {
+                winner = Some((rank, binding));
+            }
+        }
+
+        if prefix {
+            state.pending.push(keystroke);
+            return Resolution::Pending;
+        }
+        if let Some((_, binding)) = winner {
+            state.pending.clear();
+            let resolution = match &binding.action {
+                Some(Action::Run(command)) => match state.operator.take() {
+                    None => Resolution::Run(Invocation::new(command.clone())),
+                    Some((operator, mode)) => {
+                        state.mode = mode;
+                        Resolution::Run(Invocation {
+                            command: operator,
+                            args: CommandArgs {
+                                text: None,
+                                motion: Some(command.clone()),
+                            },
+                        })
+                    }
+                },
+                Some(Action::Operator(_)) if state.operator.is_some() => {
+                    state.cancel();
+                    return Resolution::Cancelled;
+                }
+                Some(Action::Operator(command)) => {
+                    state.operator = Some((command.clone(), state.mode.clone()));
+                    Resolution::Pending
+                }
+                None => {
+                    state.cancel();
+                    Resolution::Done
+                }
+            };
+            if let Some(mode) = &binding.then_mode {
+                state.mode = mode.clone();
+            }
+            return resolution;
+        }
+
+        // Rule 3.
+        if state.cancel() {
+            return Resolution::Cancelled;
+        }
+
+        // Rules 4 and 5.
+        let modifiers = keystroke.modifiers();
+        let types = self
+            .keymap
+            .mode(state.mode.as_str())
+            .is_some_and(|mode| mode.typing == Typing::Insert);
+        match &event.text {
+            Some(text) if types && !text.is_empty() && !modifiers.ctrl && !modifiers.cmd => {
+                Resolution::Run(Invocation::insert(text.clone()))
+            }
+            _ => Resolution::Unbound,
+        }
     }
 
     /// [`resolve`](Self::resolve), then, for [`Resolution::Run`], runs the
@@ -207,6 +309,19 @@ impl Dispatcher {
         editor: &mut Editor,
         set: &mut BufferSet,
     ) -> Result<Resolution, CommandError> {
-        todo!()
+        let resolution = self.resolve(state, event, contexts);
+        if let Resolution::Run(invocation) = &resolution {
+            self.registry.run(invocation, editor, set)?;
+        }
+        Ok(resolution)
     }
+}
+
+/// Whether `binding` applies in mode `mode` with `contexts` holding.
+fn applies(binding: &Binding, mode: &ModeId, contexts: &[&str]) -> bool {
+    binding.mode.as_ref().is_none_or(|m| m == mode)
+        && binding
+            .context
+            .as_deref()
+            .is_none_or(|context| contexts.contains(&context))
 }

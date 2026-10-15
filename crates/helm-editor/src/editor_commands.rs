@@ -5,13 +5,7 @@
 //! ([`ADD_NEXT_MATCH`] and the three after it) don't edit, so they read
 //! the set through the context's `&mut BufferSet` without changing it.
 
-#![expect(
-    unused_variables,
-    dead_code,
-    reason = "T-106 interface stubs; the implementation deletes this"
-)]
-
-use crate::{CommandContext, CommandError, CommandRegistry};
+use crate::{Command, CommandContext, CommandError, CommandFn, CommandId, CommandRegistry};
 
 /// [`Editor::insert`](crate::Editor::insert) with
 /// [`CommandArgs::text`](crate::CommandArgs::text). Keys no binding matches
@@ -52,11 +46,66 @@ pub const ALL: [&str; 10] = [
 
 /// Registers one command for each id in [`ALL`].
 pub(crate) fn register_all(registry: &mut CommandRegistry) {
-    todo!()
+    let commands: [(&str, &'static str, CommandFn); 10] = [
+        (INSERT, "Insert text", insert),
+        (NEWLINE, "Insert line break", |cx| {
+            cx.editor.newline(cx.set)?;
+            Ok(())
+        }),
+        (DELETE_BACKWARD, "Delete backward", |cx| {
+            cx.editor.delete_backward(cx.set)?;
+            Ok(())
+        }),
+        (DELETE_FORWARD, "Delete forward", |cx| {
+            cx.editor.delete_forward(cx.set)?;
+            Ok(())
+        }),
+        (ADD_NEXT_MATCH, "Add selection to next match", |cx| {
+            cx.editor.add_next_match(cx.set)?;
+            Ok(())
+        }),
+        (SELECT_ALL_MATCHES, "Select all matches", |cx| {
+            cx.editor.select_all_matches(cx.set)?;
+            Ok(())
+        }),
+        (ADD_CURSOR_ABOVE, "Add cursor above", |cx| {
+            cx.editor.add_cursor_above(cx.set)?;
+            Ok(())
+        }),
+        (ADD_CURSOR_BELOW, "Add cursor below", |cx| {
+            cx.editor.add_cursor_below(cx.set)?;
+            Ok(())
+        }),
+        (UNDO, "Undo", |cx| {
+            cx.editor.undo(cx.set)?;
+            Ok(())
+        }),
+        (REDO, "Redo", |cx| {
+            cx.editor.redo(cx.set)?;
+            Ok(())
+        }),
+    ];
+    for (id, title, run) in commands {
+        registry
+            .register(Command {
+                id: CommandId::from(id),
+                title,
+                run,
+            })
+            .expect("editor command ids are valid and distinct");
+    }
 }
 
 /// [`INSERT`]: errors with [`CommandError::MissingText`] when the
 /// invocation has no text.
 fn insert(cx: CommandContext<'_>) -> Result<(), CommandError> {
-    todo!()
+    let text = cx
+        .args
+        .text
+        .as_deref()
+        .ok_or_else(|| CommandError::MissingText {
+            id: CommandId::from(INSERT),
+        })?;
+    cx.editor.insert(cx.set, text)?;
+    Ok(())
 }

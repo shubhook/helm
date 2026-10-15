@@ -19,7 +19,6 @@ fn mods(ctrl: bool, alt: bool, shift: bool, cmd: bool) -> Modifiers {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn parses_modifiers_in_any_order() {
     let expected = Keystroke::new(Key::Char('k'), mods(true, true, false, true));
     for text in ["ctrl-alt-cmd-k", "cmd-alt-ctrl-k", "alt-cmd-ctrl-k"] {
@@ -31,7 +30,6 @@ fn parses_modifiers_in_any_order() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn parses_every_key_name() {
     let names = [
         ("enter", Key::Enter),
@@ -58,7 +56,6 @@ fn parses_every_key_name() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn single_chars_are_taken_as_they_are() {
     assert_eq!(ks("$").key(), Key::Char('$'));
     assert_eq!(ks("-").key(), Key::Char('-'));
@@ -73,7 +70,6 @@ fn single_chars_are_taken_as_they_are() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn shift_folds_into_letters() {
     let upper = Keystroke::new(Key::Char('A'), Modifiers::NONE);
     assert_eq!(Keystroke::new(Key::Char('a'), Modifiers::SHIFT), upper);
@@ -97,7 +93,6 @@ fn shift_folds_into_letters() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn shift_is_dropped_from_other_chars_and_kept_on_named_keys() {
     // helm-ui has already shifted the char.
     assert_eq!(
@@ -122,7 +117,6 @@ fn shift_is_dropped_from_other_chars_and_kept_on_named_keys() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn rejects_bad_keystrokes() {
     let cases = [
         ("cmd-", "missing"),
@@ -155,7 +149,6 @@ fn rejects_bad_keystrokes() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn display_writes_canonical_notation() {
     let cases = [
         ("cmd-alt-ctrl-k", "ctrl-alt-cmd-k"),
@@ -175,7 +168,6 @@ fn display_writes_canonical_notation() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn display_round_trips_every_keystroke() {
     let keys = [
         Key::Char('a'),
@@ -211,7 +203,6 @@ fn display_round_trips_every_keystroke() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn sequences_split_on_whitespace() {
     let chord = KeySequence::parse("cmd-k cmd-s").unwrap();
     assert_eq!(chord.as_slice(), &[ks("cmd-k"), ks("cmd-s")]);
@@ -230,7 +221,6 @@ fn sequences_split_on_whitespace() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn sequences_reject_empty_text_and_bad_keystrokes() {
     assert_eq!(KeySequence::parse(""), Err(KeyParseError::Empty));
     assert_eq!(KeySequence::parse(" \t "), Err(KeyParseError::Empty));
@@ -243,7 +233,6 @@ fn sequences_reject_empty_text_and_bad_keystrokes() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn plain_keys_type_their_char() {
     let typed = |text: &str| KeyEvent::parse(text).unwrap().text;
     assert_eq!(typed("a"), Some("a".to_owned()));
@@ -271,7 +260,6 @@ fn plain_keys_type_their_char() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn with_text_overrides_the_text() {
     // Option+A on macOS: the keystroke alt-a, typing å.
     let event = KeyEvent::with_text(ks("alt-a"), "å");
