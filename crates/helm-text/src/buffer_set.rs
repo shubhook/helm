@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{
-    Buffer, BufferId, HistoryError, Snapshot, TextBuffer, Transaction, TransactionError,
-    TransactionId, Version,
+    AmendError, Buffer, BufferId, HistoryError, Snapshot, TextBuffer, Transaction,
+    TransactionError, TransactionId, Version,
 };
 
 /// Buffers that edit, undo and redo through transactions, including
@@ -17,8 +17,9 @@ use crate::{
 ///
 /// The set owns its buffers. [`get`](Self::get) lends them out read-only,
 /// and the only way to change one is [`apply`](Self::apply),
-/// [`undo`](Self::undo) or [`redo`](Self::redo). So no buffer can change
-/// behind the history's back, and the rules below hold by construction.
+/// [`amend`](Self::amend), [`undo`](Self::undo) or [`redo`](Self::redo). So
+/// no buffer can change behind the history's back, and the rules below hold
+/// by construction.
 ///
 /// # Applying a transaction
 ///
@@ -289,6 +290,98 @@ impl BufferSet {
         }
         self.transactions.insert(id, Record { changes });
         Ok(TransactionId(id))
+    }
+
+    /// Folds `transaction`'s edits into the applied transaction `id`, so one
+    /// undo reverts both and one redo brings both back.
+    ///
+    /// This is how a run of keystrokes becomes one undo step (ED-2): the
+    /// editor applies the first keystroke as a transaction and amends it
+    /// with each keystroke after that. Every keystroke changes the buffer at
+    /// once, so language servers and agents, which read the buffer, see it.
+    ///
+    /// # When amending is allowed
+    ///
+    /// `id` must be applied, not undone, and must be on top of the undo
+    /// history of every buffer `transaction` touches. `transaction` may only
+    /// touch buffers `id` touched, though it needn't touch all of them. A
+    /// later transaction on top of a buffer that `transaction` doesn't touch
+    /// doesn't stop the amend. It still blocks undoing `id`, as the
+    /// [type docs](Self) describe.
+    ///
+    /// # Offsets
+    ///
+    /// Every edit's range is in bytes of its buffer's text after `id`, which
+    /// is the buffer's current text, since `id` is on top of its undo
+    /// history. Within `transaction`, ranges refer to that text, not to the
+    /// text after the edits listed before them, and edits are placed and
+    /// must not overlap exactly as for [`apply`](Self::apply).
+    ///
+    /// # Checks
+    ///
+    /// `amend` checks everything before it changes anything, in this order,
+    /// and returns the first problem it finds:
+    ///
+    /// 1. `id` must be in some history of the set
+    ///    ([`AmendError::UnknownTransaction`]). An id from another set, or
+    ///    of a transaction a later `apply` or `amend` dropped from the redo
+    ///    histories, fails here.
+    /// 2. `id` must not be undone ([`AmendError::Undone`]).
+    /// 3. `transaction` must have edits
+    ///    ([`AmendError::Transaction`] with [`TransactionError::Empty`]).
+    /// 4. For each edit in order: its buffer must be in the set
+    ///    ([`TransactionError::UnknownBuffer`]); then `id` must have touched
+    ///    it ([`AmendError::Untouched`]); then `id` must be on top of its
+    ///    undo history ([`AmendError::NotOnTop`]); then its range must be
+    ///    valid in the buffer's current text, checked the way
+    ///    [`TextBuffer::slice`] documents
+    ///    ([`TransactionError::InvalidRange`]); then it must not overlap an
+    ///    earlier edit on the same buffer ([`TransactionError::Overlap`],
+    ///    naming the earliest such edit). The [`TransactionError`]s come
+    ///    wrapped in [`AmendError::Transaction`], with the same edit indexes
+    ///    `apply` would give.
+    ///
+    /// If any check fails, no buffer, history or version changes.
+    ///
+    /// # What an amend does
+    ///
+    /// - Each buffer `transaction` touches gets its edits, exactly as if
+    ///   `apply` had applied them.
+    /// - `id` keeps its id and its place in every history.
+    ///   [`undo`](Self::undo) and [`redo`](Self::redo) return `id` as
+    ///   before, and `amend` uses up no new id.
+    /// - Undoing `id` from any buffer it touched restores every one of those
+    ///   buffers, byte for byte, to its text from before `id` was first
+    ///   applied. Redoing it restores each one to its text after the last
+    ///   amend. Buffers `id` touched that no amend touched get back the text
+    ///   `id` alone gave them.
+    /// - The redo histories of the buffers `transaction` touches are
+    ///   dropped, with the same knock-on drops as for `apply`.
+    /// - The version of each buffer `transaction` touches goes up by exactly
+    ///   one, however many edits it had there, so snapshots taken before go
+    ///   stale. Other buffers keep their versions, including ones `id`
+    ///   touched that this amend didn't. A later undo or redo of `id` adds
+    ///   one to every buffer `id` touched, as for any transaction.
+    ///
+    /// An amend whose edits leave the text as it was, such as an empty
+    /// insert, still counts: it drops redo and bumps versions.
+    ///
+    /// # Cost
+    ///
+    /// An amend costs about what applying `transaction` costs, plus work in
+    /// proportion to the changes `id` already holds for the buffers it
+    /// touches. It doesn't grow with the buffer's length, apart from the
+    /// text the edits replace, and it doesn't keep a list of amends to
+    /// replay: after any number of amends, undoing `id` is one change per
+    /// buffer, so a run of typed characters undoes like one insert.
+    ///
+    /// [`TextBuffer::slice`]: crate::TextBuffer::slice
+    #[expect(
+        unused_variables,
+        reason = "T-110 interface stub; the implementation deletes this"
+    )]
+    pub fn amend(&mut self, id: TransactionId, transaction: Transaction) -> Result<(), AmendError> {
+        todo!()
     }
 
     /// Reverts the transaction on top of `buffer`'s undo history in every
