@@ -61,7 +61,6 @@ fn state(set: &BufferSet, ids: &[BufferId]) -> (Vec<String>, Vec<u64>) {
 // Folding edits into one undo step.
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn typing_a_word_undoes_in_one_step() {
     let (mut set, ids) = set_of(&["say !"]);
     let a = ids[0];
@@ -82,7 +81,6 @@ fn typing_a_word_undoes_in_one_step() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_returns_unit() {
     let (mut set, ids) = set_of(&["x"]);
     let a = ids[0];
@@ -95,7 +93,6 @@ fn amend_returns_unit() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn the_id_stays_the_same_and_no_id_is_used_up() {
     let (mut set, ids) = set_of(&["", ""]);
     let (a, b) = (ids[0], ids[1]);
@@ -115,7 +112,6 @@ fn the_id_stays_the_same_and_no_id_is_used_up() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn offsets_refer_to_the_text_after_the_transaction() {
     let (mut set, ids) = set_of(&["abcdef"]);
     let a = ids[0];
@@ -146,7 +142,6 @@ fn offsets_refer_to_the_text_after_the_transaction() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn an_offset_valid_only_before_the_transaction_is_rejected() {
     let (mut set, ids) = set_of(&["abcdef"]);
     let a = ids[0];
@@ -165,7 +160,6 @@ fn an_offset_valid_only_before_the_transaction_is_rejected() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_can_change_text_the_transaction_put_there() {
     // Delete part of what the transaction inserted.
     let (mut set, ids) = set_of(&["ac"]);
@@ -205,7 +199,6 @@ fn amend_can_change_text_the_transaction_put_there() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_with_edits_far_from_the_transaction() {
     let (mut set, ids) = set_of(&["one two three"]);
     let a = ids[0];
@@ -230,7 +223,6 @@ fn amend_with_edits_far_from_the_transaction() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn inserts_at_one_offset_keep_their_order() {
     let (mut set, ids) = set_of(&["ab"]);
     let a = ids[0];
@@ -251,7 +243,6 @@ fn inserts_at_one_offset_keep_their_order() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn wide_characters_and_crlf() {
     let (mut set, ids) = set_of(&["é中\r\n😀"]);
     let a = ids[0];
@@ -282,7 +273,6 @@ fn wide_characters_and_crlf() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_no_op_amend_is_accepted() {
     let (mut set, ids) = set_of(&["abc"]);
     let a = ids[0];
@@ -299,7 +289,6 @@ fn a_no_op_amend_is_accepted() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_after_redo() {
     let (mut set, ids) = set_of(&["a"]);
     let a = ids[0];
@@ -315,7 +304,6 @@ fn amend_after_redo() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_an_earlier_transaction_once_the_later_one_is_undone() {
     let (mut set, ids) = set_of(&["a"]);
     let a = ids[0];
@@ -333,7 +321,6 @@ fn amend_an_earlier_transaction_once_the_later_one_is_undone() {
 // Several buffers.
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn one_undo_reverts_an_amended_transaction_in_every_buffer() {
     let (mut set, ids) = set_of(&["fn old() {}", "old();", "other"]);
     let (a, b, c) = (ids[0], ids[1], ids[2]);
@@ -358,7 +345,6 @@ fn one_undo_reverts_an_amended_transaction_in_every_buffer() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_may_touch_some_of_the_transactions_buffers() {
     let (mut set, ids) = set_of(&["a", "b", "c"]);
     let t = apply(
@@ -380,7 +366,6 @@ fn amend_may_touch_some_of_the_transactions_buffers() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_later_transaction_in_another_buffer_blocks_only_that_buffer() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -410,7 +395,6 @@ fn a_later_transaction_in_another_buffer_blocks_only_that_buffer() {
 // When an amend is refused.
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_later_transaction_on_top_refuses_the_amend() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -437,7 +421,6 @@ fn a_later_transaction_on_top_refuses_the_amend() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn an_undone_transaction_is_refused() {
     let (mut set, ids) = set_of(&["a"]);
     let a = ids[0];
@@ -456,7 +439,6 @@ fn an_undone_transaction_is_refused() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_dropped_transaction_is_unknown() {
     let (mut set, ids) = set_of(&["a"]);
     let a = ids[0];
@@ -474,7 +456,6 @@ fn a_dropped_transaction_is_unknown() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_transaction_from_another_set_is_unknown() {
     let (mut other, other_ids) = set_of(&["x"]);
     let t = apply(&mut other, vec![Edit::insert(other_ids[0], 1, "y")]);
@@ -489,7 +470,6 @@ fn a_transaction_from_another_set_is_unknown() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn an_untouched_buffer_is_refused() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -507,7 +487,6 @@ fn an_untouched_buffer_is_refused() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn apply_errors_come_wrapped() {
     let (mut set, ids) = set_of(&["héllo"]);
     let a = ids[0];
@@ -590,7 +569,6 @@ fn apply_errors_come_wrapped() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn invalid_ranges_match_slice_on_the_text_after_the_transaction() {
     let (mut set, ids) = set_of(&["a😀b"]);
     let a = ids[0];
@@ -615,7 +593,6 @@ fn invalid_ranges_match_slice_on_the_text_after_the_transaction() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn the_checks_run_in_order() {
     let (mut set, ids) = set_of(&["a", "b", "c"]);
     let (a, b, c) = (ids[0], ids[1], ids[2]);
@@ -735,7 +712,6 @@ fn the_checks_run_in_order() {
 // Redo.
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_drops_redo_like_apply() {
     let (mut set, ids) = set_of(&["a", "b", "c", "d"]);
     let (a, b, c, d) = (ids[0], ids[1], ids[2], ids[3]);
@@ -775,7 +751,6 @@ fn amend_drops_redo_like_apply() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_keeps_redo_in_buffers_it_does_not_touch() {
     // `t1` touched `a` and `b`, but the amend touches only `a`, so `b`'s
     // redo history stays.
@@ -794,7 +769,6 @@ fn amend_keeps_redo_in_buffers_it_does_not_touch() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_no_op_amend_still_drops_redo() {
     let (mut set, ids) = set_of(&["a"]);
     let a = ids[0];
@@ -807,7 +781,6 @@ fn a_no_op_amend_still_drops_redo() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_failed_amend_keeps_redo() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -834,7 +807,6 @@ fn a_failed_amend_keeps_redo() {
 // Versions and snapshots.
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn amend_bumps_each_touched_buffer_once() {
     let (mut set, ids) = set_of(&["a", "b", "c", "d"]);
     let t = apply(
@@ -871,7 +843,6 @@ fn amend_bumps_each_touched_buffer_once() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn a_failed_amend_keeps_every_version() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -906,7 +877,6 @@ fn a_failed_amend_keeps_every_version() {
 }
 
 #[test]
-#[ignore = "T-110: not implemented yet"]
 fn snapshots_go_stale_on_amend() {
     let (mut set, ids) = set_of(&["hello", "world"]);
     let (a, b) = (ids[0], ids[1]);
