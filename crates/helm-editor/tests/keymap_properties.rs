@@ -137,7 +137,6 @@ proptest! {
     /// each key but its last and then runs its command, leaving nothing
     /// pending.
     #[test]
-    #[ignore = "T-106: not implemented yet"]
     fn chords_resolve_to_their_command(
         sequences in prop::collection::vec(sequence(), 1..40),
         order in prop::collection::vec(any::<Index>(), 1..60),
@@ -163,7 +162,6 @@ proptest! {
     /// binding with a mode over one without, then a context over none,
     /// then the later one.
     #[test]
-    #[ignore = "T-106: not implemented yet"]
     fn precedence_matches_the_documented_order(
         bindings in prop::collection::vec(
             (prop::option::of(0..2usize), prop::option::of(0..3usize)),
@@ -221,7 +219,6 @@ proptest! {
     /// state that had any chord, operator or mode resolves keys exactly as
     /// a new state does.
     #[test]
-    #[ignore = "T-106: not implemented yet"]
     fn after_a_switch_a_state_acts_like_a_new_one(
         old in prop::collection::vec(spec(3), 0..30),
         new in prop::collection::vec(spec(3), 0..30),
@@ -258,7 +255,6 @@ proptest! {
     /// With no bindings on plain chars, typing any text one key per char
     /// through the dispatcher puts exactly that text at the cursor.
     #[test]
-    #[ignore = "T-106: not implemented yet"]
     fn typed_keys_insert_their_text(
         initial in "[a-c\n]{0,10}",
         at in any::<Index>(),

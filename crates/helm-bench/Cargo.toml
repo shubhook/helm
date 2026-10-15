@@ -39,7 +39,6 @@ harness = false
 name = "encoding"
 harness = false
 
-
 [[bench]]
 name = "snapshots"
 harness = false
@@ -48,7 +47,11 @@ harness = false
 name = "editor"
 harness = false
 
+[[bench]]
+name = "keymap"
+harness = false
 
 [[bench]]
 name = "amend"
 harness = false
+

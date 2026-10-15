@@ -133,7 +133,6 @@ impl Session {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn typing_goes_into_the_buffer() {
     let mut s = Session::new(vscode_like(), "", &[Selection::cursor(0)]);
     s.type_text("hello world");
@@ -145,7 +144,6 @@ fn typing_goes_into_the_buffer() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn bound_keys_edit_and_undo() {
     let mut s = Session::new(vscode_like(), "ab\r\ncd", &[Selection::cursor(2)]);
     s.keys("enter");
@@ -163,7 +161,6 @@ fn bound_keys_edit_and_undo() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn typing_at_every_cursor() {
     let mut s = Session::new(vscode_like(), "let a = a + a;", &[Selection::cursor(4)]);
     // cmd-d selects the word, then shift-cmd-l every match of it.
@@ -177,7 +174,6 @@ fn typing_at_every_cursor() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn adding_cursors_with_keys() {
     let mut s = Session::new(vscode_like(), "ab\nab\nab", &[Selection::cursor(4)]);
     s.keys("alt-cmd-up alt-cmd-down");
@@ -186,7 +182,6 @@ fn adding_cursors_with_keys() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_broken_chord_types_nothing() {
     let mut s = Session::new(vscode_like(), "", &[Selection::cursor(0)]);
     s.keys("cmd-k x");
@@ -196,7 +191,6 @@ fn a_broken_chord_types_nothing() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn option_text_is_typed() {
     let mut s = Session::new(vscode_like(), "", &[Selection::cursor(0)]);
     let option_a = KeyEvent::with_text(Keystroke::parse("alt-a").unwrap(), "å");
@@ -205,7 +199,6 @@ fn option_text_is_typed() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn vim_like_modes_edit_the_buffer() {
     let mut s = Session::new(vim_like(), "abc", &[Selection::cursor(0)]);
     // Normal mode: `x` deletes, other letters do nothing.
@@ -234,7 +227,6 @@ fn vim_like_modes_edit_the_buffer() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn switching_keymaps_mid_session() {
     let mut s = Session::new(vscode_like(), "", &[Selection::cursor(0)]);
     s.type_text("abc");
@@ -261,7 +253,6 @@ fn switching_keymaps_mid_session() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn two_editors_share_one_dispatcher() {
     let mut s = Session::new(vim_like(), "one", &[Selection::cursor(0)]);
     let id = s.set.add(Buffer::from("two"));
@@ -289,7 +280,6 @@ fn two_editors_share_one_dispatcher() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn an_unknown_command_is_an_error_and_edits_nothing() {
     let mut keymap = vscode_like();
     keymap.bind(run("cmd-s", "workspace.save")).unwrap();
@@ -311,7 +301,6 @@ fn an_unknown_command_is_an_error_and_edits_nothing() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn dispatch_returns_the_resolution() {
     let mut s = Session::new(vscode_like(), "", &[Selection::cursor(0)]);
     let parse = |text: &str| KeyEvent::parse(text).unwrap();
