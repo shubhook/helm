@@ -153,6 +153,16 @@ impl CommandRegistry {
         registry
     }
 
+    /// A registry holding the commands of
+    /// [`with_editor_commands`](Self::with_editor_commands) and the cursor
+    /// commands under the ids in
+    /// [`cursor_commands`](crate::cursor_commands): every command the
+    /// [`vscode`](crate::vscode) keymap binds. This is the registry
+    /// `helm-ui` builds its dispatcher with.
+    pub fn with_all_commands() -> Self {
+        todo!()
+    }
+
     /// Adds `command`. Errors, and adds nothing, if its id isn't in the
     /// form [`CommandId`] describes or is already registered.
     pub fn register(&mut self, command: Command) -> Result<(), RegisterError> {

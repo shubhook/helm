@@ -46,8 +46,10 @@
 //! `"editor.delete_backward"`, and runs against one [`Editor`] and the
 //! [`BufferSet`](helm_text::BufferSet) that owns its buffer. A
 //! [`CommandRegistry`] maps ids to commands.
-//! [`CommandRegistry::with_editor_commands`] registers every `Editor`
-//! command under the ids in [`editor_commands`].
+//! [`CommandRegistry::with_editor_commands`] registers the T-105 `Editor`
+//! commands under the ids in [`editor_commands`], and
+//! [`CommandRegistry::with_all_commands`] adds the cursor commands in
+//! [`cursor_commands`]: moving, selecting and deleting by a [`Motion`].
 //!
 //! # Keys, keymaps and modes
 //!
@@ -58,8 +60,8 @@
 //! A [`Keymap`] is data: a list of [`Mode`]s and a list of [`Binding`]s
 //! from a [`KeySequence`] (one keystroke, or a chord such as
 //! `cmd-k cmd-s`) to a command id, each scoped to a mode and an optional
-//! context. VS Code's keymap (T-107) has one mode; Vim's (T-108) has
-//! several. A mode says whether a key no binding matches types its text,
+//! context. VS Code's keymap ([`vscode::keymap`], T-107) has one mode;
+//! Vim's (T-108) has several. A mode says whether a key no binding matches types its text,
 //! so typing takes the same path as every other command.
 //!
 //! A [`Dispatcher`] holds the active keymap and the registry, and each
@@ -70,13 +72,16 @@
 //! editor uses the new keymap from its next key (ED-6).
 
 mod command;
+pub mod cursor_commands;
 mod dispatch;
 mod editor;
 pub mod editor_commands;
 mod error;
 mod key;
 mod keymap;
+mod motion;
 mod selection;
+pub mod vscode;
 
 pub use command::{
     Command, CommandArgs, CommandContext, CommandError, CommandFn, CommandId, CommandRegistry,
@@ -87,4 +92,5 @@ pub use editor::Editor;
 pub use error::EditorError;
 pub use key::{Key, KeyEvent, KeyParseError, KeySequence, Keystroke, Modifiers};
 pub use keymap::{Action, Binding, Keymap, KeymapError, Mode, ModeId, Typing};
+pub use motion::Motion;
 pub use selection::{Selection, Selections};
