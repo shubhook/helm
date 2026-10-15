@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{
-    AmendError, Buffer, BufferId, HistoryError, Snapshot, TextBuffer, Transaction,
+    AmendError, Buffer, BufferId, Edit, HistoryError, Snapshot, TextBuffer, Transaction,
     TransactionError, TransactionId, Version,
 };
 
@@ -107,6 +107,10 @@ pub struct BufferSet {
     next_transaction: u64,
 }
 
+/// Checked edits per buffer index, as `(start, end, index in the
+/// transaction)`. Sorted, that is the order the edits are placed in.
+type Placed = BTreeMap<usize, BTreeSet<(usize, usize, usize)>>;
+
 /// One buffer and its histories.
 #[derive(Debug)]
 struct Entry {
@@ -139,6 +143,26 @@ impl Entry {
 struct Record {
     /// One change per buffer the transaction touched, lowest buffer first.
     changes: Vec<Change>,
+    /// Whether the transaction is undone, so it sits in redo histories.
+    undone: bool,
+}
+
+impl Record {
+    /// The change to the buffer at `index`, if the transaction touched it.
+    fn change(&self, index: usize) -> Option<&Change> {
+        self.changes
+            .binary_search_by_key(&index, |change| change.buffer)
+            .ok()
+            .map(|at| &self.changes[at])
+    }
+
+    /// [`change`](Self::change), mutably.
+    fn change_mut(&mut self, index: usize) -> Option<&mut Change> {
+        self.changes
+            .binary_search_by_key(&index, |change| change.buffer)
+            .ok()
+            .map(|at| &mut self.changes[at])
+    }
 }
 
 /// What one transaction did to one buffer.
@@ -159,6 +183,129 @@ struct Change {
 struct Splice {
     range: Range<usize>,
     text: String,
+}
+
+impl Change {
+    /// The change to the buffer at `index` made of `splices`, each paired
+    /// with the text it replaces. The splices are sorted, don't overlap and
+    /// refer to the text before the change.
+    fn new(index: usize, splices: impl IntoIterator<Item = (Splice, String)>) -> Self {
+        let splices = splices.into_iter();
+        let mut forward = Vec::with_capacity(splices.size_hint().0);
+        let mut inverse = Vec::with_capacity(splices.size_hint().0);
+        // Bytes added and removed by the splices placed so far, which move
+        // where this splice's text lands in the new text.
+        let (mut added, mut removed) = (0, 0);
+        for (splice, old) in splices {
+            let new_start = splice.range.start + added - removed;
+            inverse.push(Splice {
+                range: new_start..new_start + splice.text.len(),
+                text: old,
+            });
+            added += splice.text.len();
+            removed += splice.range.len();
+            forward.push(splice);
+        }
+        Self {
+            buffer: index,
+            forward,
+            inverse,
+        }
+    }
+
+    /// Folds `edits` into the change, so it turns the text before it into
+    /// the text after it with `edits` applied.
+    ///
+    /// `edits` are sorted the way `apply` places them, don't overlap, and
+    /// refer to the text after the change, which `buffer` holds. The walk
+    /// goes through the change's splices, by where their text sits in
+    /// `buffer`, and `edits` together. A run of them that overlap or touch
+    /// becomes one splice, so a run of typed characters stays one splice.
+    /// Splices no edit reaches are kept as they are. The text the new
+    /// splices replace comes from the old splices and, where the change left
+    /// the text alone, from `buffer` inside the edits' ranges, so the work grows
+    /// with the change and the edits, not with the buffer.
+    fn compose(&mut self, buffer: &Buffer, edits: &[Splice]) {
+        // Each old splice with its inverse, whose range is where the
+        // splice's text sits in `buffer`.
+        let mut olds = mem::take(&mut self.forward)
+            .into_iter()
+            .zip(mem::take(&mut self.inverse))
+            .peekable();
+        let mut edits = edits.iter().peekable();
+        let mut composed = Vec::new();
+        // Bytes added and removed by the old splices passed so far, which
+        // map an offset in `buffer` back to the text before the change.
+        let (mut added, mut removed) = (0, 0);
+
+        loop {
+            let start = match (olds.peek(), edits.peek()) {
+                (None, None) => break,
+                (Some((_, inverse)), Some(edit)) => inverse.range.start.min(edit.range.start),
+                (Some((_, inverse)), None) => inverse.range.start,
+                (None, Some(edit)) => edit.range.start,
+            };
+            let before_start = start + removed - added;
+
+            // The run of old splices and edits that starts here: each one
+            // starts at or before the end of the ones before it.
+            let mut end = start;
+            let mut run_olds = Vec::new();
+            let mut run_edits = Vec::new();
+            loop {
+                if let Some(old) = olds.next_if(|(_, inverse)| inverse.range.start <= end) {
+                    end = end.max(old.1.range.end);
+                    added += old.0.text.len();
+                    removed += old.0.range.len();
+                    run_olds.push(old);
+                } else if let Some(edit) = edits.next_if(|edit| edit.range.start <= end) {
+                    end = end.max(edit.range.end);
+                    run_edits.push(edit);
+                } else {
+                    break;
+                }
+            }
+
+            if run_edits.is_empty() {
+                composed.extend(
+                    run_olds
+                        .into_iter()
+                        .map(|(forward, inverse)| (forward, inverse.text)),
+                );
+                continue;
+            }
+
+            // The run's text before the change: what the old splices
+            // replaced, and between them, text the change left alone, which
+            // lies inside an edit's range.
+            let mut old_text = String::new();
+            let mut at = start;
+            for (_, inverse) in run_olds {
+                read(buffer, at..inverse.range.start, &mut old_text);
+                old_text.push_str(&inverse.text);
+                at = inverse.range.end;
+            }
+            read(buffer, at..end, &mut old_text);
+
+            // The run's text after the edits: their texts, and between
+            // them, text in `buffer`, which lies inside an old splice's.
+            let mut new_text = String::new();
+            let mut at = start;
+            for edit in run_edits {
+                read(buffer, at..edit.range.start, &mut new_text);
+                new_text.push_str(&edit.text);
+                at = edit.range.end;
+            }
+            read(buffer, at..end, &mut new_text);
+
+            let splice = Splice {
+                range: before_start..end + removed - added,
+                text: new_text,
+            };
+            composed.push((splice, old_text));
+        }
+        *self = Self::new(self.buffer, composed);
+    }
 }
 
 impl BufferSet {
@@ -223,33 +370,7 @@ impl BufferSet {
     /// describe, and then changes nothing.
     pub fn apply(&mut self, transaction: Transaction) -> Result<TransactionId, TransactionError> {
         let edits = transaction.into_edits();
-        if edits.is_empty() {
-            return Err(TransactionError::Empty);
-        }
-
-        // Check every edit, collecting the text each one replaces and, per
-        // buffer, the edits as `(start, end, index)`. Sorted, that is the
-        // order the edits are placed in.
-        let mut olds = Vec::with_capacity(edits.len());
-        let mut placed: BTreeMap<usize, BTreeSet<(usize, usize, usize)>> = BTreeMap::new();
-        for (i, edit) in edits.iter().enumerate() {
-            let index = self
-                .index(edit.buffer)
-                .ok_or(TransactionError::UnknownBuffer {
-                    edit: i,
-                    buffer: edit.buffer,
-                })?;
-            let old = self.entries[index]
-                .buffer
-                .slice(edit.range.clone())
-                .map_err(|error| TransactionError::InvalidRange { edit: i, error })?;
-            let mine = placed.entry(index).or_default();
-            if let Some(other) = earliest_overlap(mine, &edit.range) {
-                return Err(TransactionError::Overlap { edit: i, other });
-            }
-            mine.insert((edit.range.start, edit.range.end, i));
-            olds.push(old);
-        }
+        let (mut olds, placed) = self.check(&edits, |_, _, _| Ok(()), |error| error)?;
 
         let touched: Vec<usize> = placed.keys().copied().collect();
         self.drop_redo(&touched);
@@ -259,36 +380,29 @@ impl BufferSet {
         self.next_transaction += 1;
         let mut changes = Vec::with_capacity(placed.len());
         for (index, mine) in placed {
-            let mut forward = Vec::with_capacity(mine.len());
-            let mut inverse = Vec::with_capacity(mine.len());
-            // Bytes added and removed by the edits placed so far, which move
-            // where this edit's text lands in the new text.
-            let (mut added, mut removed) = (0, 0);
-            for (start, end, i) in mine {
-                let text = mem::take(&mut texts[i]);
-                let new_start = start + added - removed;
-                inverse.push(Splice {
-                    range: new_start..new_start + text.len(),
-                    text: mem::take(&mut olds[i]),
-                });
-                added += text.len();
-                removed += end - start;
-                forward.push(Splice {
-                    range: start..end,
-                    text,
-                });
-            }
+            let change = Change::new(
+                index,
+                mine.into_iter().map(|(start, end, i)| {
+                    let splice = Splice {
+                        range: start..end,
+                        text: mem::take(&mut texts[i]),
+                    };
+                    (splice, mem::take(&mut olds[i]))
+                }),
+            );
             let entry = &mut self.entries[index];
-            splice_all(&mut entry.buffer, &forward);
+            splice_all(&mut entry.buffer, &change.forward);
             entry.bump();
             entry.undo.push(id);
-            changes.push(Change {
-                buffer: index,
-                forward,
-                inverse,
-            });
+            changes.push(change);
         }
-        self.transactions.insert(id, Record { changes });
+        self.transactions.insert(
+            id,
+            Record {
+                changes,
+                undone: false,
+            },
+        );
         Ok(TransactionId(id))
     }
 
@@ -376,12 +490,58 @@ impl BufferSet {
     /// buffer, so a run of typed characters undoes like one insert.
     ///
     /// [`TextBuffer::slice`]: crate::TextBuffer::slice
-    #[expect(
-        unused_variables,
-        reason = "T-110 interface stub; the implementation deletes this"
-    )]
     pub fn amend(&mut self, id: TransactionId, transaction: Transaction) -> Result<(), AmendError> {
-        todo!()
+        let Some(record) = self.transactions.get(&id.0) else {
+            return Err(AmendError::UnknownTransaction { transaction: id });
+        };
+        if record.undone {
+            return Err(AmendError::Undone { transaction: id });
+        }
+
+        let edits = transaction.into_edits();
+        let (_, placed) = self.check(
+            &edits,
+            |i, index, buffer| {
+                if record.change(index).is_none() {
+                    Err(AmendError::Untouched { edit: i, buffer })
+                } else if self.entries[index].undo.last() != Some(&id.0) {
+                    Err(AmendError::NotOnTop { edit: i, buffer })
+                } else {
+                    Ok(())
+                }
+            },
+            AmendError::Transaction,
+        )?;
+
+        let touched: Vec<usize> = placed.keys().copied().collect();
+        self.drop_redo(&touched);
+
+        let mut texts: Vec<String> = edits.into_iter().map(|edit| edit.text).collect();
+        let Self {
+            entries,
+            transactions,
+            ..
+        } = self;
+        let Some(record) = transactions.get_mut(&id.0) else {
+            unreachable!("`id` is applied, so dropping redo kept it");
+        };
+        for (index, mine) in placed {
+            let splices: Vec<Splice> = mine
+                .into_iter()
+                .map(|(start, end, i)| Splice {
+                    range: start..end,
+                    text: mem::take(&mut texts[i]),
+                })
+                .collect();
+            let Some(change) = record.change_mut(index) else {
+                unreachable!("every edit's buffer passed the `Untouched` check");
+            };
+            let entry = &mut entries[index];
+            change.compose(&entry.buffer, &splices);
+            splice_all(&mut entry.buffer, &splices);
+            entry.bump();
+        }
+        Ok(())
     }
 
     /// Reverts the transaction on top of `buffer`'s undo history in every
@@ -406,6 +566,44 @@ impl BufferSet {
         self.step(buffer, Direction::Redo)
     }
 
+    /// Runs `apply`'s checks on `edits`, with `extra` run on each edit
+    /// right after its buffer is found, and returns the text each edit
+    /// replaces and, per buffer, the edits as `(start, end, index)`. Sorted,
+    /// that is the order the edits are placed in. `wrap` turns a failed
+    /// `apply` check into the caller's error.
+    fn check<E>(
+        &self,
+        edits: &[Edit],
+        mut extra: impl FnMut(usize, usize, BufferId) -> Result<(), E>,
+        wrap: impl Fn(TransactionError) -> E,
+    ) -> Result<(Vec<String>, Placed), E> {
+        if edits.is_empty() {
+            return Err(wrap(TransactionError::Empty));
+        }
+        let mut olds = Vec::with_capacity(edits.len());
+        let mut placed = Placed::new();
+        for (i, edit) in edits.iter().enumerate() {
+            let index = self.index(edit.buffer).ok_or_else(|| {
+                wrap(TransactionError::UnknownBuffer {
+                    edit: i,
+                    buffer: edit.buffer,
+                })
+            })?;
+            extra(i, index, edit.buffer)?;
+            let old = self.entries[index]
+                .buffer
+                .slice(edit.range.clone())
+                .map_err(|error| wrap(TransactionError::InvalidRange { edit: i, error }))?;
+            let mine = placed.entry(index).or_default();
+            if let Some(other) = earliest_overlap(mine, &edit.range) {
+                return Err(wrap(TransactionError::Overlap { edit: i, other }));
+            }
+            mine.insert((edit.range.start, edit.range.end, i));
+            olds.push(old);
+        }
+        Ok((olds, placed))
+    }
+
     /// The index in `entries` of buffer `id`, if the set has it.
     fn index(&self, id: BufferId) -> Option<usize> {
         usize::try_from(id.0)
@@ -425,7 +623,9 @@ impl BufferSet {
         let Some(&top) = direction.from(&self.entries[index]).last() else {
             return Ok(None);
         };
-        let record = &self.transactions[&top];
+        let Some(record) = self.transactions.get_mut(&top) else {
+            unreachable!("every id in a history has a record");
+        };
 
         // Changes are sorted by buffer, so the first blocked one is the
         // lowest id.
@@ -451,6 +651,7 @@ impl BufferSet {
             to.push(top);
             entry.bump();
         }
+        record.undone = matches!(direction, Direction::Undo);
         Ok(Some(TransactionId(top)))
     }
 
@@ -514,6 +715,14 @@ impl Direction {
 fn splice_all(buffer: &mut Buffer, splices: &[Splice]) {
     for splice in splices.iter().rev() {
         buffer.splice(splice.range.clone(), &splice.text);
+    }
+}
+
+/// Appends the text in `range` of `buffer` to `into`. `range` comes from
+/// splices and edits already checked against `buffer`, so it is valid.
+fn read(buffer: &Buffer, range: Range<usize>, into: &mut String) {
+    if !range.is_empty() {
+        into.push_str(&buffer.slice(range).expect("a checked range"));
     }
 }
 

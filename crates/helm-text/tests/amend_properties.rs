@@ -548,7 +548,6 @@ proptest! {
     /// starting texts, as undoing every separate transaction does, and one
     /// redo brings back the final texts.
     #[test]
-    #[ignore = "T-110: not implemented yet"]
     fn a_chain_of_amends_matches_separate_transactions(
         starts in starts(),
         first in first_specs(),
@@ -629,7 +628,6 @@ proptest! {
     /// Random applies, amends of the latest or any earlier transaction,
     /// undos and redos: every result, text and version matches the oracle.
     #[test]
-    #[ignore = "T-110: not implemented yet"]
     fn random_histories_with_amends_match_the_oracle(starts in starts(), ops in ops()) {
         let mut case = Case::new(&starts);
         for op in &ops {
@@ -640,7 +638,6 @@ proptest! {
     /// After random histories with amends, undoing whatever isn't blocked,
     /// over and over, returns every buffer to its starting text.
     #[test]
-    #[ignore = "T-110: not implemented yet"]
     fn undoing_everything_after_amends_restores_every_buffer(
         starts in starts(),
         ops in ops(),

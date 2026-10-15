@@ -48,3 +48,7 @@ harness = false
 name = "editor"
 harness = false
 
+
+[[bench]]
+name = "amend"
+harness = false
