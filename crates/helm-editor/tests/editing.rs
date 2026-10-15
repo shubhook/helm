@@ -52,7 +52,6 @@ fn assert_sels(editor: &Editor, expected: &[Selection], primary: usize) {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn typing_at_three_cursors_is_one_transaction() {
     let (mut set, mut editor) = setup("ab\ncd\nef", &[c(1), c(4), c(7)], 1);
     let id = editor.insert(&mut set, "X").unwrap();
@@ -66,7 +65,6 @@ fn typing_at_three_cursors_is_one_transaction() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn typing_replaces_every_selection() {
     // "one", "two" (selected leftwards) and "three".
     let (mut set, mut editor) = setup("one two three", &[s(0, 3), s(7, 4), s(8, 13)], 2);
@@ -76,7 +74,6 @@ fn typing_replaces_every_selection() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn typing_moves_cursors_by_bytes() {
     // é is 2 bytes, 中 3 and 😀 4. Cursors after each on the first line, and
     // at the end of the text.
@@ -92,7 +89,6 @@ fn typing_moves_cursors_by_bytes() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn typing_over_touching_selections() {
     // Two non-empty selections that touch stay apart, and both get the text.
     let (mut set, mut editor) = setup("abc", &[s(0, 1), s(1, 2)], 0);
@@ -108,7 +104,6 @@ fn typing_over_touching_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn typing_nothing_at_cursors_is_no_transaction() {
     let (mut set, mut editor) = setup("ab", &[c(1), c(2)], 0);
     assert_eq!(editor.insert(&mut set, ""), Ok(None));
@@ -118,7 +113,6 @@ fn typing_nothing_at_cursors_is_no_transaction() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn typed_line_breaks_go_in_as_given() {
     // No conversion to the file's line endings: that is paste's job, later.
     let (mut set, mut editor) = setup("a\r\nb", &[c(1)], 0);
@@ -134,7 +128,6 @@ fn typed_line_breaks_go_in_as_given() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn newline_in_a_crlf_file_is_crlf() {
     let (mut set, mut editor) = setup("a\r\nb", &[c(1), c(4)], 0);
     editor.newline(&mut set).unwrap();
@@ -149,7 +142,6 @@ fn newline_in_a_crlf_file_is_crlf() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn newline_in_lf_cr_and_new_files() {
     let (mut set, mut editor) = setup("a\nb", &[c(1), c(3)], 1);
     editor.newline(&mut set).unwrap();
@@ -176,7 +168,6 @@ fn newline_in_lf_cr_and_new_files() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn newline_replaces_selections() {
     let (mut set, mut editor) = setup("abc\r\nxyz", &[s(1, 2), s(8, 6)], 0);
     editor.newline(&mut set).unwrap();
@@ -185,7 +176,6 @@ fn newline_replaces_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn delete_backward_removes_one_character_per_cursor() {
     // Cursors after é, 中 and 😀.
     let (mut set, mut editor) = setup("aé-中-😀-", &[c(3), c(7), c(12)], 2);
@@ -195,7 +185,6 @@ fn delete_backward_removes_one_character_per_cursor() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn delete_backward_and_crlf() {
     // Right after a CRLF: both bytes go.
     let (mut set, mut editor) = setup("a\r\nb", &[c(3)], 0);
@@ -222,7 +211,6 @@ fn delete_backward_and_crlf() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn delete_backward_at_the_start() {
     // Only the cursor that has something before it deletes.
     let (mut set, mut editor) = setup("ab", &[c(0), c(2)], 1);
@@ -238,7 +226,6 @@ fn delete_backward_at_the_start() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn delete_removes_selected_text() {
     let (mut set, mut editor) = setup("one two three", &[s(3, 0), c(5), s(8, 13)], 1);
     editor.delete_backward(&mut set).unwrap();
@@ -258,7 +245,6 @@ fn delete_removes_selected_text() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn delete_forward_removes_one_character_per_cursor() {
     // é is 0..2, CR 2, LF 3, 😀 4..8.
     let (mut set, mut editor) = setup("é\r\n😀", &[c(0), c(4)], 1);
@@ -292,7 +278,6 @@ fn delete_forward_removes_one_character_per_cursor() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn stale_selections_are_clamped() {
     // a is 0, 😀 1..5, b 5. 3 is inside 😀 and 100 is past the end.
     let (mut set, mut editor) = setup("a😀b", &[c(3), c(100)], 1);
@@ -319,7 +304,6 @@ fn stale_selections_are_clamped() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn every_command_checks_the_buffer() {
     let mut other = BufferSet::new();
     other.add(Buffer::from("x"));
@@ -347,7 +331,6 @@ fn every_command_checks_the_buffer() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn undo_and_redo_restore_selections() {
     let (mut set, mut editor) = setup("abc", &[s(1, 0), c(3)], 1);
     let id = editor.insert(&mut set, "X").unwrap();
@@ -366,7 +349,6 @@ fn undo_and_redo_restore_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn undo_and_redo_walk_back_through_each_command() {
     let (mut set, mut editor) = setup("", &[c(0)], 0);
     editor.insert(&mut set, "a").unwrap();
@@ -402,7 +384,6 @@ fn undo_and_redo_walk_back_through_each_command() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn undo_restores_the_clamped_selections() {
     let (mut set, mut editor) = setup("ab", &[c(50)], 0);
     editor.insert(&mut set, "x").unwrap();
@@ -412,7 +393,6 @@ fn undo_restores_the_clamped_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn moving_selections_is_not_undone() {
     let (mut set, mut editor) = setup("ab\ncd", &[c(0)], 0);
     let id = editor.insert(&mut set, "x").unwrap();
@@ -427,7 +407,6 @@ fn moving_selections_is_not_undone() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn undoing_an_outside_transaction_keeps_the_selections() {
     let (mut set, mut editor) = setup("ab", &[c(2)], 0);
     let id = editor.buffer();
@@ -454,7 +433,6 @@ fn undoing_an_outside_transaction_keeps_the_selections() {
 }
 
 #[test]
-#[ignore = "T-105: not implemented yet"]
 fn blocked_undo_changes_nothing() {
     let mut set = BufferSet::new();
     let a = set.add(Buffer::from("a"));

@@ -18,6 +18,7 @@ name = "bench-compare"
 bench = false
 
 [dependencies]
+helm-editor = { path = "../helm-editor" }
 helm-text = { path = "../helm-text" }
 # bench-compare reads budgets.toml and criterion's estimates.json files.
 serde_json = "=1.0.154"
@@ -36,4 +37,8 @@ harness = false
 
 [[bench]]
 name = "encoding"
+harness = false
+
+[[bench]]
+name = "editor"
 harness = false

@@ -111,13 +111,18 @@ impl Selections {
     /// Returns `None` if `selections` is empty or `primary` is not an index
     /// into it.
     pub fn new(selections: Vec<Selection>, primary: usize) -> Option<Self> {
-        todo!("T-105: sort and merge into normal form")
+        if primary >= selections.len() {
+            return None;
+        }
+        Some(normalize(&selections, primary))
     }
 
     /// Adds `selection`, puts the set back in normal form, and makes the
     /// selection it ends up in the primary.
     pub fn push(&mut self, selection: Selection) {
-        todo!("T-105: add one selection and make it primary")
+        let mut selections = std::mem::take(&mut self.selections);
+        selections.push(selection);
+        *self = normalize(&selections, selections.len() - 1);
     }
 
     /// The selections in normal form: sorted by start, none overlapping.
@@ -133,5 +138,96 @@ impl Selections {
     /// The index of the primary in [`as_slice`](Self::as_slice).
     pub fn primary_index(&self) -> usize {
         self.primary
+    }
+}
+
+/// `input` in normal form, with `input[primary]` as the primary before
+/// merging. `primary` must be an index into `input`.
+fn normalize(input: &[Selection], primary: usize) -> Selections {
+    // Input indexes sorted by start, cursors first at the same start. Then a
+    // cursor that joins two touching selections is seen before the second
+    // one, and one sweep finds every group.
+    let mut order: Vec<usize> = (0..input.len()).collect();
+    order.sort_by_key(|&i| (input[i].start(), !input[i].is_empty(), i));
+
+    let mut selections: Vec<Selection> = Vec::new();
+    let mut new_primary = 0;
+    let mut group = Group::start(input, order[0], primary);
+    for &i in &order[1..] {
+        let selection = input[i];
+        let joins = selection.start() < group.end
+            || (selection.start() == group.end && (selection.is_empty() || group.cursor_at_end));
+        if joins {
+            group.add(input, i, primary);
+        } else {
+            if group.has_primary {
+                new_primary = selections.len();
+            }
+            selections.push(group.finish(input, primary));
+            group = Group::start(input, i, primary);
+        }
+    }
+    if group.has_primary {
+        new_primary = selections.len();
+    }
+    selections.push(group.finish(input, primary));
+
+    Selections {
+        selections,
+        primary: new_primary,
+    }
+}
+
+/// The selections joined so far into one, while [`normalize`] sweeps.
+struct Group {
+    start: usize,
+    end: usize,
+    /// Whether a cursor sits at `end`, so a non-empty selection starting
+    /// there joins too.
+    cursor_at_end: bool,
+    /// Whether the primary is in the group.
+    has_primary: bool,
+    /// The lowest input index of a non-empty selection in the group.
+    first_non_empty: Option<usize>,
+}
+
+impl Group {
+    fn start(input: &[Selection], i: usize, primary: usize) -> Self {
+        let selection = input[i];
+        Self {
+            start: selection.start(),
+            end: selection.end(),
+            cursor_at_end: selection.is_empty(),
+            has_primary: i == primary,
+            first_non_empty: (!selection.is_empty()).then_some(i),
+        }
+    }
+
+    fn add(&mut self, input: &[Selection], i: usize, primary: usize) {
+        let selection = input[i];
+        if selection.end() > self.end {
+            self.end = selection.end();
+            self.cursor_at_end = false;
+        } else if selection.is_empty() && selection.start() == self.end {
+            self.cursor_at_end = true;
+        }
+        self.has_primary |= i == primary;
+        if !selection.is_empty() {
+            self.first_non_empty = Some(self.first_non_empty.map_or(i, |first| first.min(i)));
+        }
+    }
+
+    /// The joined selection, pointing the way the primary does if it is
+    /// here and not empty, else the way the first non-empty one given does.
+    fn finish(&self, input: &[Selection], primary: usize) -> Selection {
+        let leader = if self.has_primary && !input[primary].is_empty() {
+            Some(primary)
+        } else {
+            self.first_non_empty
+        };
+        match leader {
+            Some(i) if input[i].is_reversed() => Selection::new(self.end, self.start),
+            _ => Selection::new(self.start, self.end),
+        }
     }
 }

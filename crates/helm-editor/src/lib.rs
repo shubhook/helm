@@ -40,13 +40,6 @@
 //! that made the transaction. Commands that only move or add selections are
 //! not transactions and are not undone.
 
-// T-105 stubs. Delete this attribute once every `todo!()` is filled in.
-#![expect(
-    unused_variables,
-    dead_code,
-    reason = "T-105 interface stubs; the implementation deletes this"
-)]
-
 mod editor;
 mod error;
 mod selection;
