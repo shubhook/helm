@@ -336,6 +336,7 @@ name = "helm-editor"
 version = "0.1.0"
 dependencies = [
  "helm-text",
+ "proptest",
 ]
 
 [[package]]
