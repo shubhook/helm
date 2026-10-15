@@ -8,7 +8,7 @@ use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
 };
 
-use crate::{EditorError, Selection, Selections};
+use crate::{EditorError, Motion, Selection, Selections};
 
 /// The selections on one buffer of a [`BufferSet`], and the commands that
 /// edit at every selection or add new ones.
@@ -70,6 +70,30 @@ use crate::{EditorError, Selection, Selections};
 /// around a cursor extends left from it while the character before is a
 /// word character, and right while the character after is one. If both
 /// neighbours aren't word characters, there is no word.
+///
+/// # Motions (T-107)
+///
+/// [`move_cursors`](Self::move_cursors),
+/// [`extend_selections`](Self::extend_selections) and
+/// [`delete_to`](Self::delete_to) move each selection's head by a
+/// [`Motion`], which documents where each one goes. Moving reads only the
+/// text near each head, and the lines it crosses for
+/// [`Motion::Up`] and [`Motion::Down`]; it never copies the whole text.
+///
+/// # Goal columns
+///
+/// Moving up and down through a short line and back keeps the column, as
+/// in every editor. Each selection has a goal column, in chars from the
+/// start of its head's line. The first [`Motion::Up`] or [`Motion::Down`],
+/// through `move_cursors` or `extend_selections`, sets it to the head's
+/// column, capped at the line's length without its line break. Later Up
+/// and Down moves aim for the goal, not the current column, and keep it.
+///
+/// Any other `&mut self` method drops every goal, including other motions,
+/// editing commands, undo, redo and
+/// [`set_selections`](Self::set_selections). If an Up or Down move merges
+/// selections, the merged one keeps the goal of one of them; which one is
+/// not specified.
 #[derive(Clone, Debug)]
 pub struct Editor {
     buffer: BufferId,
@@ -325,6 +349,95 @@ impl Editor {
             self.undone.retain(|&undone| undone != record.id);
         }
         Ok(id)
+    }
+
+    /// Moves every selection by `motion` (T-107): each becomes a cursor
+    /// where `motion` takes its head. Returns whether the selections
+    /// changed.
+    ///
+    /// [`Motion::Left`] and [`Motion::Right`] are the exception: a
+    /// selection that isn't empty becomes a cursor at its start or its end,
+    /// without moving further. [`Motion::Up`] and [`Motion::Down`] use and
+    /// keep goal columns, as the type docs describe.
+    ///
+    /// The selections are clamped first and put back in normal form after,
+    /// so cursors that land on one offset merge. The primary is the
+    /// selection the old primary became.
+    #[expect(
+        unused_variables,
+        reason = "T-107 interface stub; the implementation deletes this"
+    )]
+    pub fn move_cursors(&mut self, set: &BufferSet, motion: Motion) -> Result<bool, EditorError> {
+        todo!()
+    }
+
+    /// Extends every selection by `motion` (T-107): each head moves where
+    /// `motion` takes it, and each anchor stays. Returns whether the
+    /// selections changed.
+    ///
+    /// Unlike [`move_cursors`](Self::move_cursors), [`Motion::Left`] and
+    /// [`Motion::Right`] move the head of a selection that isn't empty like
+    /// any other. A head that moves back onto its anchor leaves a cursor.
+    /// Clamping, normal form, the primary and goal columns work as in
+    /// `move_cursors`.
+    #[expect(
+        unused_variables,
+        reason = "T-107 interface stub; the implementation deletes this"
+    )]
+    pub fn extend_selections(
+        &mut self,
+        set: &BufferSet,
+        motion: Motion,
+    ) -> Result<bool, EditorError> {
+        todo!()
+    }
+
+    /// Deletes from every cursor to where `motion` takes it (T-107), in one
+    /// transaction, such as Option+Backspace for [`Motion::WordLeft`].
+    /// A selection that isn't empty deletes its range instead, as
+    /// [`delete_backward`](Self::delete_backward) does.
+    ///
+    /// Each cursor's range runs between its head and where `motion` takes
+    /// it, whichever comes first. Otherwise it works as `delete_backward`:
+    /// overlapping ranges are joined, each selection that deleted something
+    /// becomes a cursor where its range started, the others stay where they
+    /// were, moved by the edits before them, and with nothing to delete it
+    /// applies no transaction and returns `Ok(None)`. Undo and redo put
+    /// the selections back as for any editing command.
+    #[expect(
+        unused_variables,
+        reason = "T-107 interface stub; the implementation deletes this"
+    )]
+    pub fn delete_to(
+        &mut self,
+        set: &mut BufferSet,
+        motion: Motion,
+    ) -> Result<Option<TransactionId>, EditorError> {
+        todo!()
+    }
+
+    /// Replaces the selections with one selection of the whole text,
+    /// pointing forward from offset 0, as the primary (T-107). Returns
+    /// whether the selections changed. In an empty text that is a cursor
+    /// at 0.
+    #[expect(
+        unused_variables,
+        reason = "T-107 interface stub; the implementation deletes this"
+    )]
+    pub fn select_all(&mut self, set: &BufferSet) -> Result<bool, EditorError> {
+        todo!()
+    }
+
+    /// VS Code's Escape (T-107). With more than one selection, keeps only
+    /// the primary, as it is. With one selection, makes it a cursor at its
+    /// head. Returns whether the selections changed. The selections are
+    /// clamped first.
+    #[expect(
+        unused_variables,
+        reason = "T-107 interface stub; the implementation deletes this"
+    )]
+    pub fn collapse_selections(&mut self, set: &BufferSet) -> Result<bool, EditorError> {
+        todo!()
     }
 }
 
