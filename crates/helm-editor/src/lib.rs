@@ -39,11 +39,52 @@
 //! back the selections the editor had just before or just after the command
 //! that made the transaction. Commands that only move or add selections are
 //! not transactions and are not undone.
+//!
+//! # Commands
+//!
+//! Every command has a stable string id, a [`CommandId`] such as
+//! `"editor.delete_backward"`, and runs against one [`Editor`] and the
+//! [`BufferSet`](helm_text::BufferSet) that owns its buffer. A
+//! [`CommandRegistry`] maps ids to commands.
+//! [`CommandRegistry::with_editor_commands`] registers every `Editor`
+//! command under the ids in [`editor_commands`].
+//!
+//! # Keys, keymaps and modes
+//!
+//! `helm-ui` turns each platform key press into a [`KeyEvent`]: a
+//! [`Keystroke`] (a [`Key`] and its [`Modifiers`], Cmd included) and the
+//! text it types. No GPUI type gets this far down.
+//!
+//! A [`Keymap`] is data: a list of [`Mode`]s and a list of [`Binding`]s
+//! from a [`KeySequence`] (one keystroke, or a chord such as
+//! `cmd-k cmd-s`) to a command id, each scoped to a mode and an optional
+//! context. VS Code's keymap (T-107) has one mode; Vim's (T-108) has
+//! several. A mode says whether a key no binding matches types its text,
+//! so typing takes the same path as every other command.
+//!
+//! A [`Dispatcher`] holds the active keymap and the registry, and each
+//! editor holds a [`KeyState`]: its mode, a chord typed so far and a
+//! pending operator. [`Dispatcher::resolve`] turns one key event into a
+//! [`Resolution`] and documents which binding wins.
+//! [`Dispatcher::set_keymap`] switches keymaps at runtime, and every open
+//! editor uses the new keymap from its next key (ED-6).
 
+mod command;
+mod dispatch;
 mod editor;
+pub mod editor_commands;
 mod error;
+mod key;
+mod keymap;
 mod selection;
 
+pub use command::{
+    Command, CommandArgs, CommandContext, CommandError, CommandFn, CommandId, CommandRegistry,
+    Invocation, RegisterError,
+};
+pub use dispatch::{Dispatcher, KeyState, Resolution};
 pub use editor::Editor;
 pub use error::EditorError;
+pub use key::{Key, KeyEvent, KeyParseError, KeySequence, Keystroke, Modifiers};
+pub use keymap::{Action, Binding, Keymap, KeymapError, Mode, ModeId, Typing};
 pub use selection::{Selection, Selections};
