@@ -66,6 +66,7 @@ mod buffer;
 mod buffer_set;
 mod encoding;
 mod error;
+mod snapshot;
 mod transaction;
 
 pub use buffer::Buffer;
@@ -75,6 +76,7 @@ pub use encoding::{
     UTF16_SAMPLE_LEN,
 };
 pub use error::{HistoryError, TextError, TransactionError};
+pub use snapshot::{Snapshot, Version};
 pub use transaction::{BufferId, Edit, Transaction, TransactionId};
 
 /// A position as a line and a column in bytes from the start of that line.
