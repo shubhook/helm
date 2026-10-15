@@ -2,18 +2,12 @@
 //! threads read while the UI thread keeps editing. [`Version`] and
 //! [`Snapshot`] hold the rules.
 
-#![expect(
-    unused_variables,
-    dead_code,
-    reason = "T-103 interface stubs; the implementation deletes this"
-)]
-
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{Buffer, BufferId, BufferSet, Point, TextBuffer, TextError, Utf16Point};
+use crate::{Buffer, BufferId, Point, TextBuffer, TextError, Utf16Point};
 
 /// The version of one buffer in a [`BufferSet`]: how many times a
 /// transaction has been applied, undone or redone on it since it was added.
@@ -76,26 +70,43 @@ impl Version {
 /// final, and its `false` only means the worker hasn't seen a change yet.
 #[derive(Clone, Debug)]
 pub struct Snapshot {
-    // Placeholder fields: replace them freely.
-    /// The buffer's text when the snapshot was taken.
+    /// The buffer's text when the snapshot was taken. Cloning a `Buffer`
+    /// clones its rope, which shares every node instead of copying text.
     buffer: Buffer,
     /// Which buffer this is a snapshot of.
     id: BufferId,
     /// The buffer's version when the snapshot was taken.
     version: Version,
-    /// The buffer's current version, shared with the set.
+    /// The buffer's current version, shared with the set, which is its only
+    /// writer.
     latest: Arc<AtomicU64>,
 }
 
 impl Snapshot {
+    /// A snapshot of `buffer`, the text of buffer `id` at `version`, whose
+    /// set stores each later version into `latest`.
+    pub(crate) fn new(
+        buffer: Buffer,
+        id: BufferId,
+        version: Version,
+        latest: Arc<AtomicU64>,
+    ) -> Self {
+        Self {
+            buffer,
+            id,
+            version,
+            latest,
+        }
+    }
+
     /// The buffer this is a snapshot of.
     pub fn buffer(&self) -> BufferId {
-        todo!()
+        self.id
     }
 
     /// The buffer's version when the snapshot was taken.
     pub fn version(&self) -> Version {
-        todo!()
+        self.version
     }
 
     /// Whether the buffer has changed since the snapshot was taken, so its
@@ -111,96 +122,82 @@ impl Snapshot {
     /// After the set is dropped, this keeps answering as of the set's last
     /// change.
     pub fn is_stale(&self) -> bool {
-        todo!()
+        // Relaxed: see `Entry::bump` in buffer_set.rs. Versions only grow, so
+        // once a load sees a newer one, coherence keeps later loads from
+        // seeing an older one.
+        self.latest.load(Ordering::Relaxed) != self.version.0
     }
 }
 
 /// Writes the whole text, so `to_string()` returns it.
 impl fmt::Display for Snapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        fmt::Display::fmt(&self.buffer, f)
     }
 }
 
 impl TextBuffer for Snapshot {
     fn len_bytes(&self) -> usize {
-        todo!()
+        self.buffer.len_bytes()
     }
 
     fn len_chars(&self) -> usize {
-        todo!()
+        self.buffer.len_chars()
     }
 
     fn len_utf16(&self) -> usize {
-        todo!()
+        self.buffer.len_utf16()
     }
 
     fn len_lines(&self) -> usize {
-        todo!()
+        self.buffer.len_lines()
     }
 
     fn line(&self, line: usize) -> Result<String, TextError> {
-        todo!()
+        self.buffer.line(line)
     }
 
     fn slice(&self, range: Range<usize>) -> Result<String, TextError> {
-        todo!()
+        self.buffer.slice(range)
     }
 
     fn byte_to_char(&self, byte: usize) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.byte_to_char(byte)
     }
 
     fn char_to_byte(&self, char: usize) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.char_to_byte(char)
     }
 
     fn byte_to_utf16(&self, byte: usize) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.byte_to_utf16(byte)
     }
 
     fn utf16_to_byte(&self, utf16: usize) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.utf16_to_byte(utf16)
     }
 
     fn byte_to_line(&self, byte: usize) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.byte_to_line(byte)
     }
 
     fn line_to_byte(&self, line: usize) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.line_to_byte(line)
     }
 
     fn byte_to_point(&self, byte: usize) -> Result<Point, TextError> {
-        todo!()
+        self.buffer.byte_to_point(byte)
     }
 
     fn point_to_byte(&self, point: Point) -> Result<usize, TextError> {
-        todo!()
+        self.buffer.point_to_byte(point)
     }
 
     fn byte_to_utf16_point(&self, byte: usize) -> Result<Utf16Point, TextError> {
-        todo!()
+        self.buffer.byte_to_utf16_point(byte)
     }
 
     fn utf16_point_to_byte(&self, point: Utf16Point) -> Result<usize, TextError> {
-        todo!()
-    }
-}
-
-impl BufferSet {
-    /// The current version of buffer `id`, or `None` if the set has no such
-    /// buffer.
-    pub fn version(&self, id: BufferId) -> Option<Version> {
-        todo!()
-    }
-
-    /// A snapshot of buffer `id`'s current text and version, or `None` if
-    /// the set has no such buffer.
-    ///
-    /// Costs O(1) whatever the buffer's size: no copy of the text, no lock,
-    /// and no change to the buffer, its version or its history.
-    pub fn snapshot(&self, id: BufferId) -> Option<Snapshot> {
-        todo!()
+        self.buffer.utf16_point_to_byte(point)
     }
 }

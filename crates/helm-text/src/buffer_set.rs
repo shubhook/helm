@@ -4,9 +4,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::mem;
 use std::ops::Range;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{
-    Buffer, BufferId, HistoryError, TextBuffer, Transaction, TransactionError, TransactionId,
+    Buffer, BufferId, HistoryError, Snapshot, TextBuffer, Transaction, TransactionError,
+    TransactionId, Version,
 };
 
 /// Buffers that edit, undo and redo through transactions, including
@@ -111,6 +114,23 @@ struct Entry {
     undo: Vec<u64>,
     /// Transaction id numbers, the most recently undone on top (last).
     redo: Vec<u64>,
+    /// The buffer's version. Only the set writes it.
+    version: u64,
+    /// A copy of `version` that the buffer's snapshots read to tell whether
+    /// they are stale. The set stores each new version into it.
+    latest: Arc<AtomicU64>,
+}
+
+impl Entry {
+    /// Adds one to the version, after a transaction changed the buffer.
+    fn bump(&mut self) {
+        self.version += 1;
+        // Relaxed is enough: the counter publishes no data, since a snapshot
+        // carries its own text. Coherence on this one atomic, plus whatever
+        // happens-before edge the reader's channel or join gives, makes
+        // `Snapshot::is_stale` see every version stored before its call.
+        self.latest.store(self.version, Ordering::Relaxed);
+    }
 }
 
 /// What one transaction did, kept to undo and redo it.
@@ -159,6 +179,8 @@ impl BufferSet {
             buffer,
             undo: Vec::new(),
             redo: Vec::new(),
+            version: 0,
+            latest: Arc::new(AtomicU64::new(0)),
         });
         id
     }
@@ -166,6 +188,30 @@ impl BufferSet {
     /// The buffer with id `id`, or `None` if the set has no such buffer.
     pub fn get(&self, id: BufferId) -> Option<&Buffer> {
         self.index(id).map(|index| &self.entries[index].buffer)
+    }
+
+    /// The current version of buffer `id`, or `None` if the set has no such
+    /// buffer.
+    pub fn version(&self, id: BufferId) -> Option<Version> {
+        self.index(id)
+            .map(|index| Version(self.entries[index].version))
+    }
+
+    /// A snapshot of buffer `id`'s current text and version, or `None` if
+    /// the set has no such buffer.
+    ///
+    /// Costs O(1) whatever the buffer's size: no copy of the text, no lock,
+    /// and no change to the buffer, its version or its history.
+    pub fn snapshot(&self, id: BufferId) -> Option<Snapshot> {
+        self.index(id).map(|index| {
+            let entry = &self.entries[index];
+            Snapshot::new(
+                entry.buffer.clone(),
+                id,
+                Version(entry.version),
+                Arc::clone(&entry.latest),
+            )
+        })
     }
 
     /// Checks every edit of `transaction`, then applies them all, records
@@ -233,6 +279,7 @@ impl BufferSet {
             }
             let entry = &mut self.entries[index];
             splice_all(&mut entry.buffer, &forward);
+            entry.bump();
             entry.undo.push(id);
             changes.push(Change {
                 buffer: index,
@@ -309,6 +356,7 @@ impl BufferSet {
             splice_all(&mut entry.buffer, splices);
             from.pop();
             to.push(top);
+            entry.bump();
         }
         Ok(Some(TransactionId(top)))
     }

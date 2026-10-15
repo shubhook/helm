@@ -52,7 +52,6 @@ fn apply(set: &mut BufferSet, edits: Vec<Edit>) -> TransactionId {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn new_buffers_start_at_version_zero() {
     let (mut set, ids) = set_of(&["", "hello", "中😀\r\n"]);
     assert_eq!(versions(&set, &ids), [0, 0, 0]);
@@ -64,7 +63,6 @@ fn new_buffers_start_at_version_zero() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn unknown_buffer_has_no_version_or_snapshot() {
     let (big, big_ids) = set_of(&["a", "b", "c"]);
     let (small, _) = set_of(&["a"]);
@@ -79,7 +77,6 @@ fn unknown_buffer_has_no_version_or_snapshot() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn apply_adds_one_to_each_touched_buffer() {
     let (mut set, ids) = set_of(&["abcdef", "xyz", "untouched"]);
     let (a, b) = (ids[0], ids[1]);
@@ -101,7 +98,6 @@ fn apply_adds_one_to_each_touched_buffer() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn undo_and_redo_get_new_versions() {
     let (mut set, ids) = set_of(&["hello"]);
     let a = ids[0];
@@ -127,7 +123,6 @@ fn undo_and_redo_get_new_versions() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn versions_only_grow() {
     let (mut set, ids) = set_of(&["a"]);
     let a = ids[0];
@@ -151,7 +146,6 @@ fn versions_only_grow() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn new_transaction_after_undo_gets_a_fresh_version() {
     let (mut set, ids) = set_of(&["base"]);
     let a = ids[0];
@@ -173,7 +167,6 @@ fn new_transaction_after_undo_gets_a_fresh_version() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn multi_buffer_undo_and_redo_change_every_touched_buffer() {
     let (mut set, ids) = set_of(&["a", "b", "c"]);
     let (a, b, c) = (ids[0], ids[1], ids[2]);
@@ -192,7 +185,6 @@ fn multi_buffer_undo_and_redo_change_every_touched_buffer() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn no_op_transaction_still_counts() {
     let (mut set, ids) = set_of(&["same"]);
     let a = ids[0];
@@ -207,7 +199,6 @@ fn no_op_transaction_still_counts() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn failed_calls_leave_versions_alone() {
     let (mut set, ids) = set_of(&["héllo", "world", "third"]);
     let (a, b) = (ids[0], ids[1]);
@@ -292,7 +283,6 @@ fn failed_calls_leave_versions_alone() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn blocked_redo_leaves_versions_alone() {
     let (mut set, ids) = set_of(&["x", "y"]);
     let (x, y) = (ids[0], ids[1]);
@@ -320,7 +310,6 @@ fn blocked_redo_leaves_versions_alone() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_carries_its_buffer_and_version() {
     let (mut set, ids) = set_of(&["one", "two"]);
     let (a, b) = (ids[0], ids[1]);
@@ -339,7 +328,6 @@ fn snapshot_carries_its_buffer_and_version() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_keeps_its_text_through_apply_undo_and_redo() {
     let (mut set, ids) = set_of(&["fn main() {}\r\n"]);
     let a = ids[0];
@@ -420,7 +408,6 @@ fn assert_reads_like(snap: &Snapshot, text: &str) {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_reads_like_the_buffer_did() {
     let start = "é中😀\r\nab\rc\n\u{2028}x😀";
     let (mut set, ids) = set_of(&[start, ""]);
@@ -442,7 +429,6 @@ fn snapshot_reads_like_the_buffer_did() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_display_writes_the_whole_text() {
     let text_in = "line one\r\nline two 中\rline three 😀\n";
     let (set, ids) = set_of(&[text_in]);
@@ -452,7 +438,6 @@ fn snapshot_display_writes_the_whole_text() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_clones_share_text_and_version() {
     let (mut set, ids) = set_of(&["abc"]);
     let a = ids[0];
@@ -470,7 +455,6 @@ fn snapshot_clones_share_text_and_version() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn two_snapshots_at_one_version_agree() {
     let (mut set, ids) = set_of(&["abc", "other"]);
     let (a, b) = (ids[0], ids[1]);
@@ -487,7 +471,6 @@ fn two_snapshots_at_one_version_agree() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_goes_stale_when_its_own_buffer_changes() {
     let (mut set, ids) = set_of(&["a", "b"]);
     let (a, b) = (ids[0], ids[1]);
@@ -508,7 +491,6 @@ fn snapshot_goes_stale_when_its_own_buffer_changes() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn stale_stays_stale_when_undo_restores_the_text() {
     let (mut set, ids) = set_of(&["text"]);
     let a = ids[0];
@@ -528,7 +510,6 @@ fn stale_stays_stale_when_undo_restores_the_text() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn failed_calls_leave_snapshots_current() {
     let (mut set, ids) = set_of(&["abc", "def"]);
     let (a, b) = (ids[0], ids[1]);
@@ -556,7 +537,6 @@ fn failed_calls_leave_snapshots_current() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_outlives_its_set() {
     let (mut set, ids) = set_of(&["first", "second"]);
     let (a, b) = (ids[0], ids[1]);
@@ -577,7 +557,6 @@ fn snapshot_outlives_its_set() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_reads_on_another_thread() {
     let (mut set, ids) = set_of(&["shared 中 text\n"]);
     let a = ids[0];
@@ -605,7 +584,6 @@ fn snapshot_reads_on_another_thread() {
 }
 
 #[test]
-#[ignore = "T-103: not implemented yet"]
 fn snapshot_of_a_large_buffer_keeps_its_text() {
     // About 1 MiB, so the rope has many nodes for edits to copy.
     let line = "let café = \"中😀\";\r\n";
