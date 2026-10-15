@@ -39,6 +39,12 @@ harness = false
 name = "encoding"
 harness = false
 
+
+[[bench]]
+name = "snapshots"
+harness = false
+
 [[bench]]
 name = "editor"
 harness = false
+

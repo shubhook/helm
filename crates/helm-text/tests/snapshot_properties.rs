@@ -226,7 +226,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
-    #[ignore = "T-103: not implemented yet"]
     fn versions_and_snapshots_follow_the_model(
         starts in starts(),
         ops in prop::collection::vec(op(), 1..40),
@@ -241,7 +240,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     #[test]
-    #[ignore = "T-103: not implemented yet"]
     fn snapshots_read_like_a_buffer_of_their_text(
         starts in starts(),
         ops in prop::collection::vec(op(), 1..8),
