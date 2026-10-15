@@ -1,16 +1,11 @@
 //! Keymaps as data: the modes a keymap has, and bindings from key sequences
 //! to commands, each scoped by mode and by an optional context.
 
-#![expect(
-    unused_variables,
-    dead_code,
-    reason = "T-106 interface stubs; the implementation deletes this"
-)]
-
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::{CommandId, KeyParseError, KeySequence};
+use crate::{CommandId, KeyParseError, KeySequence, Keystroke};
 
 /// A mode's id, such as `"normal"` or `"insert"`. Unique within a keymap.
 ///
@@ -21,26 +16,26 @@ pub struct ModeId(Arc<str>);
 impl ModeId {
     /// The id as text.
     pub fn as_str(&self) -> &str {
-        todo!()
+        &self.0
     }
 }
 
 impl From<&str> for ModeId {
     fn from(id: &str) -> Self {
-        todo!()
+        Self(Arc::from(id))
     }
 }
 
 impl From<String> for ModeId {
     fn from(id: String) -> Self {
-        todo!()
+        Self(Arc::from(id))
     }
 }
 
 impl fmt::Display for ModeId {
     /// Writes the id as it is.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        f.write_str(&self.0)
     }
 }
 
@@ -68,7 +63,10 @@ pub struct Mode {
 impl Mode {
     /// A mode with id `id`.
     pub fn new(id: impl Into<ModeId>, typing: Typing) -> Self {
-        todo!()
+        Self {
+            id: id.into(),
+            typing,
+        }
     }
 }
 
@@ -110,34 +108,55 @@ impl Binding {
     /// Keys `keys`, in [`KeySequence`]'s notation, that run `command`, in
     /// every mode and context.
     pub fn run(keys: &str, command: impl Into<CommandId>) -> Result<Self, KeyParseError> {
-        todo!()
+        Self::with_action(keys, Some(Action::Run(command.into())))
     }
 
     /// Keys `keys` that hold `command` as the pending operator, in every
     /// mode and context.
     pub fn operator(keys: &str, command: impl Into<CommandId>) -> Result<Self, KeyParseError> {
-        todo!()
+        Self::with_action(keys, Some(Action::Operator(command.into())))
     }
 
     /// Keys `keys` that only switch to mode `mode`, in every mode and
     /// context.
     pub fn switch_mode(keys: &str, mode: impl Into<ModeId>) -> Result<Self, KeyParseError> {
-        todo!()
+        Ok(Self::with_action(keys, None)?.then_mode(mode))
     }
 
     /// This binding, applying only in mode `mode`.
     pub fn in_mode(self, mode: impl Into<ModeId>) -> Self {
-        todo!()
+        Self {
+            mode: Some(mode.into()),
+            ..self
+        }
     }
 
     /// This binding, applying only while context `context` holds.
     pub fn when(self, context: impl Into<String>) -> Self {
-        todo!()
+        Self {
+            context: Some(context.into()),
+            ..self
+        }
     }
 
     /// This binding, also switching to mode `mode` when it matches.
     pub fn then_mode(self, mode: impl Into<ModeId>) -> Self {
-        todo!()
+        Self {
+            then_mode: Some(mode.into()),
+            ..self
+        }
+    }
+
+    /// Keys `keys` doing `action`, in every mode and context, with no mode
+    /// switch.
+    fn with_action(keys: &str, action: Option<Action>) -> Result<Self, KeyParseError> {
+        Ok(Self {
+            keys: KeySequence::parse(keys)?,
+            mode: None,
+            context: None,
+            action,
+            then_mode: None,
+        })
     }
 }
 
@@ -161,6 +180,10 @@ pub struct Keymap {
     modes: Vec<Mode>,
     /// In the order they were added.
     bindings: Vec<Binding>,
+    /// The index into `bindings` of every binding whose keys start with
+    /// the keystroke, in the order they were added. Resolving a key only
+    /// looks at one of these lists, not every binding.
+    by_first_key: HashMap<Keystroke, Vec<usize>>,
 }
 
 impl Keymap {
@@ -170,27 +193,42 @@ impl Keymap {
     /// Errors with [`KeymapError::NoModes`] if `modes` is empty, and with
     /// [`KeymapError::DuplicateMode`] if two modes share an id.
     pub fn new(name: impl Into<String>, modes: Vec<Mode>) -> Result<Self, KeymapError> {
-        todo!()
+        if modes.is_empty() {
+            return Err(KeymapError::NoModes);
+        }
+        for (i, mode) in modes.iter().enumerate() {
+            if modes[..i].iter().any(|earlier| earlier.id == mode.id) {
+                return Err(KeymapError::DuplicateMode {
+                    mode: mode.id.clone(),
+                });
+            }
+        }
+        Ok(Self {
+            name: name.into(),
+            modes,
+            bindings: Vec::new(),
+            by_first_key: HashMap::new(),
+        })
     }
 
     /// The keymap's name, such as `"vscode"` or `"vim"`.
     pub fn name(&self) -> &str {
-        todo!()
+        &self.name
     }
 
     /// The modes, the initial mode first.
     pub fn modes(&self) -> &[Mode] {
-        todo!()
+        &self.modes
     }
 
     /// The mode with id `id`, if the keymap has it.
     pub fn mode(&self, id: &str) -> Option<&Mode> {
-        todo!()
+        self.modes.iter().find(|mode| mode.id.as_str() == id)
     }
 
     /// The id of the first mode.
     pub fn initial_mode(&self) -> &ModeId {
-        todo!()
+        &self.modes[0].id
     }
 
     /// Adds `binding` after every binding added before it.
@@ -199,12 +237,36 @@ impl Keymap {
     /// `binding.mode` or `binding.then_mode` names a mode the keymap
     /// doesn't have.
     pub fn bind(&mut self, binding: Binding) -> Result<(), KeymapError> {
-        todo!()
+        for mode in [&binding.mode, &binding.then_mode].into_iter().flatten() {
+            if self.mode(mode.as_str()).is_none() {
+                return Err(KeymapError::UnknownMode { mode: mode.clone() });
+            }
+        }
+        let first = binding.keys.as_slice()[0];
+        self.by_first_key
+            .entry(first)
+            .or_default()
+            .push(self.bindings.len());
+        self.bindings.push(binding);
+        Ok(())
     }
 
     /// The bindings, in the order they were added.
     pub fn bindings(&self) -> &[Binding] {
-        todo!()
+        &self.bindings
+    }
+
+    /// Every binding whose keys start with `first`, in the order they were
+    /// added.
+    pub(crate) fn bindings_starting_with(
+        &self,
+        first: Keystroke,
+    ) -> impl Iterator<Item = &Binding> {
+        self.by_first_key
+            .get(&first)
+            .into_iter()
+            .flatten()
+            .map(|&i| &self.bindings[i])
     }
 }
 
@@ -227,7 +289,13 @@ pub enum KeymapError {
 
 impl fmt::Display for KeymapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self {
+            Self::NoModes => f.write_str("a keymap needs at least one mode"),
+            Self::DuplicateMode { mode } => write!(f, "two modes have the id {:?}", mode.as_str()),
+            Self::UnknownMode { mode } => {
+                write!(f, "the keymap has no mode {:?}", mode.as_str())
+            }
+        }
     }
 }
 

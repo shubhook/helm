@@ -117,7 +117,6 @@ fn press_in(
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn keymap_new_checks_modes() {
     assert_eq!(
         Keymap::new("empty", Vec::new()).unwrap_err(),
@@ -151,7 +150,6 @@ fn keymap_new_checks_modes() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn bind_checks_modes_and_keeps_order() {
     let mut keymap = keymap(
         "k",
@@ -188,7 +186,6 @@ fn bind_checks_modes_and_keeps_order() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn binding_builders_fill_the_fields() {
     let binding = run("cmd-k cmd-s", "workspace.save_all")
         .in_mode("default")
@@ -233,7 +230,6 @@ fn binding_builders_fill_the_fields() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_new_state_starts_idle_in_the_initial_mode() {
     let (_, state) = dispatcher(vim_like());
     assert_eq!(state.mode().as_str(), "normal");
@@ -242,7 +238,6 @@ fn a_new_state_starts_idle_in_the_initial_mode() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn single_keys_run_their_command() {
     let (d, mut state) = dispatcher(one_mode(vec![
         run("cmd-z", "editor.undo"),
@@ -261,7 +256,6 @@ fn single_keys_run_their_command() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_chord_waits_for_its_last_key() {
     let (d, mut state) = dispatcher(one_mode(vec![
         run("cmd-k cmd-s", "workspace.save_all"),
@@ -286,7 +280,6 @@ fn a_chord_waits_for_its_last_key() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_broken_chord_drops_every_key() {
     let (d, mut state) = dispatcher(one_mode(vec![
         run("cmd-k cmd-s", "workspace.save_all"),
@@ -313,7 +306,6 @@ fn a_broken_chord_drops_every_key() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_chord_prefix_beats_an_exact_match() {
     // `cmd-k` alone is bound, but it also starts a chord, so it waits.
     let (d, mut state) = dispatcher(one_mode(vec![
@@ -325,7 +317,6 @@ fn a_chord_prefix_beats_an_exact_match() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn precedence_table() {
     // Every binding is on `cmd-d`, which types nothing. Each case lists the
     // bindings as (mode, context, command) in the order they are added, the
@@ -461,7 +452,6 @@ fn precedence_table() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn contexts_scope_chords_too() {
     let (d, mut state) = dispatcher(one_mode(vec![
         run("cmd-k cmd-s", "a.save").when("editor_focus"),
@@ -476,7 +466,6 @@ fn contexts_scope_chords_too() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn unbound_keys_type_their_text() {
     let (d, mut state) = dispatcher(one_mode(vec![run("cmd-d", "a.d")]));
     assert_eq!(
@@ -514,7 +503,6 @@ fn unbound_keys_type_their_text() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn ignoring_modes_drop_unbound_keys() {
     let (d, mut state) = dispatcher(vim_like());
     assert_eq!(
@@ -530,7 +518,6 @@ fn ignoring_modes_drop_unbound_keys() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn bindings_switch_modes() {
     let (d, mut state) = dispatcher(vim_like());
     assert_eq!(press(&d, &mut state, "i"), [Resolution::Done]);
@@ -544,7 +531,6 @@ fn bindings_switch_modes() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn an_operator_waits_for_its_motion() {
     let (d, mut state) = dispatcher(vim_like());
     assert_eq!(press(&d, &mut state, "d"), [Resolution::Pending]);
@@ -577,7 +563,6 @@ fn an_operator_waits_for_its_motion() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_pending_operator_is_cancelled_by_any_other_key() {
     let (d, mut state) = dispatcher(vim_like());
     // An unbound key, escape, and a broken chord motion.
@@ -598,7 +583,6 @@ fn a_pending_operator_is_cancelled_by_any_other_key() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn an_operator_returns_to_the_mode_it_was_set_in() {
     // `c` is bound in every mode, so it can start in insert mode too.
     let (d, mut state) = dispatcher(vim_like());
@@ -619,7 +603,6 @@ fn an_operator_returns_to_the_mode_it_was_set_in() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn an_empty_binding_hides_an_earlier_one() {
     let mut empty = run("cmd-d", "unused.command");
     empty.action = None;
@@ -628,7 +611,6 @@ fn an_empty_binding_hides_an_earlier_one() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn an_empty_binding_drops_a_pending_operator() {
     let mut keymap = vim_like();
     let mut empty = run("q", "unused.command").in_mode("operator");
@@ -644,7 +626,6 @@ fn an_empty_binding_drops_a_pending_operator() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn cancel_drops_what_is_pending() {
     let (d, mut state) = dispatcher(vim_like());
     assert!(!state.cancel());
@@ -669,7 +650,6 @@ fn cancel_drops_what_is_pending() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn switching_keymaps_drops_a_pending_chord() {
     let (mut d, mut state) = dispatcher(one_mode(vec![run("cmd-k cmd-s", "a.save_all")]));
     assert_eq!(press(&d, &mut state, "cmd-k"), [Resolution::Pending]);
@@ -691,7 +671,6 @@ fn switching_keymaps_drops_a_pending_chord() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn switching_keymaps_reaches_every_editor() {
     let (mut d, mut first) = dispatcher(vim_like());
     let mut second = d.key_state();
@@ -709,7 +688,6 @@ fn switching_keymaps_reaches_every_editor() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn switching_keeps_a_mode_the_new_keymap_has() {
     let (mut d, mut state) = dispatcher(vim_like());
     press(&d, &mut state, "i");
@@ -732,7 +710,6 @@ fn switching_keeps_a_mode_the_new_keymap_has() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn switching_drops_a_pending_operator_and_its_mode() {
     let (mut d, mut state) = dispatcher(vim_like());
     press(&d, &mut state, "d g");
@@ -749,7 +726,6 @@ fn switching_drops_a_pending_operator_and_its_mode() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn sync_without_a_switch_changes_nothing() {
     let (d, mut state) = dispatcher(vim_like());
     press(&d, &mut state, "d g");
@@ -763,7 +739,6 @@ fn sync_without_a_switch_changes_nothing() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn a_state_made_after_a_switch_starts_in_the_new_initial_mode() {
     let (mut d, _) = dispatcher(one_mode(Vec::new()));
     d.set_keymap(vim_like());

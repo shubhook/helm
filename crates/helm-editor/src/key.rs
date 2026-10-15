@@ -2,12 +2,6 @@
 //! it types. `helm-ui` turns each platform key event into a [`KeyEvent`]
 //! (Phase 2), so nothing below it sees a GPUI type.
 
-#![expect(
-    unused_variables,
-    dead_code,
-    reason = "T-106 interface stubs; the implementation deletes this"
-)]
-
 use std::fmt;
 
 /// A key, apart from the modifiers held with it.
@@ -140,31 +134,109 @@ pub struct Keystroke {
 impl Keystroke {
     /// `key` with `modifiers`, in normal form: Shift is folded into a
     /// [`Key::Char`] as the type docs describe.
-    pub fn new(key: Key, modifiers: Modifiers) -> Self {
-        todo!()
+    pub fn new(key: Key, mut modifiers: Modifiers) -> Self {
+        let key = match key {
+            Key::Char(c) if modifiers.shift => {
+                modifiers.shift = false;
+                Key::Char(c.to_ascii_uppercase())
+            }
+            key => key,
+        };
+        Self { key, modifiers }
     }
 
     /// The key.
     pub fn key(&self) -> Key {
-        todo!()
+        self.key
     }
 
     /// The modifiers. `shift` is never set when the key is a
     /// [`Key::Char`].
     pub fn modifiers(&self) -> Modifiers {
-        todo!()
+        self.modifiers
     }
 
     /// Reads one keystroke in the notation the type docs describe, such as
     /// `"cmd-s"`, `"ctrl-shift-tab"` or `"A"`.
     pub fn parse(text: &str) -> Result<Self, KeyParseError> {
-        todo!()
+        if text.trim().is_empty() {
+            return Err(KeyParseError::Empty);
+        }
+        let keystroke = || text.to_owned();
+        let mut modifiers = Modifiers::NONE;
+        let mut rest = text;
+        loop {
+            let (held, after) = if let Some(after) = rest.strip_prefix("ctrl-") {
+                (&mut modifiers.ctrl, after)
+            } else if let Some(after) = rest.strip_prefix("alt-") {
+                (&mut modifiers.alt, after)
+            } else if let Some(after) = rest.strip_prefix("shift-") {
+                (&mut modifiers.shift, after)
+            } else if let Some(after) = rest.strip_prefix("cmd-") {
+                (&mut modifiers.cmd, after)
+            } else {
+                break;
+            };
+            if *held {
+                return Err(KeyParseError::RepeatedModifier {
+                    keystroke: keystroke(),
+                });
+            }
+            if after.is_empty() {
+                return Err(KeyParseError::MissingKey {
+                    keystroke: keystroke(),
+                });
+            }
+            *held = true;
+            rest = after;
+        }
+        let key = parse_key(rest).ok_or_else(|| KeyParseError::UnknownKey {
+            keystroke: keystroke(),
+        })?;
+        if let Key::Char(c) = key
+            && modifiers.shift
+            && !c.is_ascii_alphabetic()
+        {
+            return Err(KeyParseError::ShiftedChar {
+                keystroke: keystroke(),
+            });
+        }
+        Ok(Self::new(key, modifiers))
     }
 }
 
 impl fmt::Display for Keystroke {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        let m = self.modifiers;
+        for (held, prefix) in [
+            (m.ctrl, "ctrl-"),
+            (m.alt, "alt-"),
+            (m.shift, "shift-"),
+            (m.cmd, "cmd-"),
+        ] {
+            if held {
+                f.write_str(prefix)?;
+            }
+        }
+        let name = match self.key {
+            Key::Char(' ') => "space",
+            Key::Char(c) => return write!(f, "{c}"),
+            Key::F(n) => return write!(f, "f{n}"),
+            Key::Enter => "enter",
+            Key::Tab => "tab",
+            Key::Backspace => "backspace",
+            Key::Delete => "delete",
+            Key::Escape => "escape",
+            Key::Left => "left",
+            Key::Right => "right",
+            Key::Up => "up",
+            Key::Down => "down",
+            Key::Home => "home",
+            Key::End => "end",
+            Key::PageUp => "pageup",
+            Key::PageDown => "pagedown",
+        };
+        f.write_str(name)
     }
 }
 
@@ -172,7 +244,37 @@ impl fmt::Display for Keystroke {
 /// stands for in the notation: one char other than a control char, or a
 /// key name. `None` for anything else.
 fn parse_key(text: &str) -> Option<Key> {
-    todo!()
+    let key = match text {
+        "enter" => Key::Enter,
+        "tab" => Key::Tab,
+        "backspace" => Key::Backspace,
+        "delete" => Key::Delete,
+        "escape" => Key::Escape,
+        "space" => Key::Char(' '),
+        "left" => Key::Left,
+        "right" => Key::Right,
+        "up" => Key::Up,
+        "down" => Key::Down,
+        "home" => Key::Home,
+        "end" => Key::End,
+        "pageup" => Key::PageUp,
+        "pagedown" => Key::PageDown,
+        _ => {
+            let mut chars = text.chars();
+            if let (Some(c), None) = (chars.next(), chars.next()) {
+                return (!c.is_control()).then_some(Key::Char(c));
+            }
+            // `f1` to `f20`, digits only and no leading zero, so the name
+            // reads back as `Display` writes it.
+            let digits = text.strip_prefix('f')?;
+            if digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            let n: u8 = digits.parse().ok()?;
+            return (1..=20).contains(&n).then_some(Key::F(n));
+        }
+    };
+    Some(key)
 }
 
 /// One or more keystrokes pressed one after another. A sequence of two or
@@ -186,33 +288,45 @@ pub struct KeySequence {
 impl KeySequence {
     /// The sequence `keys`, or `None` if `keys` is empty.
     pub fn new(keys: Vec<Keystroke>) -> Option<Self> {
-        todo!()
+        (!keys.is_empty()).then_some(Self { keys })
     }
 
     /// Reads keystrokes separated by whitespace, each in
     /// [`Keystroke`]'s notation: `"cmd-k cmd-s"`, `"g g"`. Errors with
     /// [`KeyParseError::Empty`] if there is none.
     pub fn parse(text: &str) -> Result<Self, KeyParseError> {
-        todo!()
+        let keys = text
+            .split_whitespace()
+            .map(Keystroke::parse)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(keys).ok_or(KeyParseError::Empty)
     }
 
     /// The keystrokes, in the order they are pressed.
     pub fn as_slice(&self) -> &[Keystroke] {
-        todo!()
+        &self.keys
     }
 }
 
 impl From<Keystroke> for KeySequence {
     /// A sequence of one keystroke.
     fn from(keystroke: Keystroke) -> Self {
-        todo!()
+        Self {
+            keys: vec![keystroke],
+        }
     }
 }
 
 impl fmt::Display for KeySequence {
     /// The keystrokes in [`Keystroke`]'s notation, joined by one space.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        for (i, keystroke) in self.keys.iter().enumerate() {
+            if i > 0 {
+                f.write_str(" ")?;
+            }
+            write!(f, "{keystroke}")?;
+        }
+        Ok(())
     }
 }
 
@@ -240,19 +354,27 @@ impl KeyEvent {
     /// else, `None`. So `a` types `"a"`, `A` types `"A"`, `space` types
     /// `" "`, and `ctrl-a`, `alt-a` and `enter` type nothing.
     pub fn new(keystroke: Keystroke) -> Self {
-        todo!()
+        let m = keystroke.modifiers;
+        let text = match keystroke.key {
+            Key::Char(c) if !(m.alt || m.ctrl || m.cmd) => Some(c.to_string()),
+            _ => None,
+        };
+        Self { keystroke, text }
     }
 
     /// A key event that types `text`, whatever the keystroke. `helm-ui`
     /// uses this when the platform reports text the keystroke alone
     /// doesn't give, such as `"å"` for `alt-a`.
     pub fn with_text(keystroke: Keystroke, text: impl Into<String>) -> Self {
-        todo!()
+        Self {
+            keystroke,
+            text: Some(text.into()),
+        }
     }
 
     /// [`Keystroke::parse`], then [`new`](Self::new).
     pub fn parse(text: &str) -> Result<Self, KeyParseError> {
-        todo!()
+        Keystroke::parse(text).map(Self::new)
     }
 }
 
@@ -288,7 +410,22 @@ pub enum KeyParseError {
 
 impl fmt::Display for KeyParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self {
+            Self::Empty => f.write_str("no keystroke given"),
+            Self::MissingKey { keystroke } => {
+                write!(f, "keystroke {keystroke:?} has modifiers but no key")
+            }
+            Self::RepeatedModifier { keystroke } => {
+                write!(f, "keystroke {keystroke:?} repeats a modifier")
+            }
+            Self::UnknownKey { keystroke } => {
+                write!(f, "keystroke {keystroke:?} names no known key")
+            }
+            Self::ShiftedChar { keystroke } => write!(
+                f,
+                "keystroke {keystroke:?} puts shift before a char that isn't an ASCII letter; write the shifted char instead"
+            ),
+        }
     }
 }
 

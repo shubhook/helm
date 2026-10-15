@@ -50,7 +50,6 @@ fn type_motion(cx: CommandContext<'_>) -> Result<(), CommandError> {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn command_ids_compare_as_text() {
     let id = CommandId::from("editor.undo");
     assert_eq!(id.as_str(), "editor.undo");
@@ -61,7 +60,6 @@ fn command_ids_compare_as_text() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn editor_command_ids_are_the_documented_ones() {
     assert_eq!(
         editor_commands::ALL,
@@ -83,7 +81,6 @@ fn editor_command_ids_are_the_documented_ones() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn registers_every_editor_command_sorted_with_a_title() {
     let registry = CommandRegistry::with_editor_commands();
     let ids: Vec<&str> = registry.commands().map(|c| c.id.as_str()).collect();
@@ -97,7 +94,6 @@ fn registers_every_editor_command_sorted_with_a_title() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn register_checks_the_id() {
     let mut registry = CommandRegistry::new();
     for id in ["a", "editor.x", "vim.delete_line", "a1.b_2.c3", "_"] {
@@ -133,7 +129,6 @@ fn register_checks_the_id() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn editor_commands_cannot_be_registered_twice() {
     let mut registry = CommandRegistry::with_editor_commands();
     assert_eq!(
@@ -145,7 +140,6 @@ fn editor_commands_cannot_be_registered_twice() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn each_editing_command_runs_its_editor_method() {
     let registry = CommandRegistry::with_editor_commands();
     let (mut set, mut editor) = setup("ab\r\ncd", &[Selection::cursor(1)]);
@@ -173,7 +167,6 @@ fn each_editing_command_runs_its_editor_method() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn each_selection_command_runs_its_editor_method() {
     let registry = CommandRegistry::with_editor_commands();
     let run = |id: &str, editor: &mut Editor, set: &mut BufferSet| {
@@ -210,7 +203,6 @@ fn each_selection_command_runs_its_editor_method() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn insert_without_text_is_an_error() {
     let registry = CommandRegistry::with_editor_commands();
     let (mut set, mut editor) = setup("ab", &[Selection::cursor(1)]);
@@ -228,7 +220,6 @@ fn insert_without_text_is_an_error() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn unknown_commands_and_editor_errors_are_reported() {
     let registry = CommandRegistry::with_editor_commands();
     let (mut set, mut editor) = setup("ab", &[Selection::cursor(1)]);
@@ -260,7 +251,6 @@ fn unknown_commands_and_editor_errors_are_reported() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn run_passes_the_invocation_args() {
     let mut registry = CommandRegistry::new();
     registry
@@ -283,7 +273,6 @@ fn run_passes_the_invocation_args() {
 }
 
 #[test]
-#[ignore = "T-106: not implemented yet"]
 fn invocation_constructors() {
     assert_eq!(
         Invocation::new("editor.undo"),
