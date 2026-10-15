@@ -196,3 +196,75 @@ impl fmt::Display for HistoryError {
 }
 
 impl std::error::Error for HistoryError {}
+
+/// Why [`BufferSet::amend`](crate::BufferSet::amend) rejected an amendment.
+///
+/// `edit` is an index into [`Transaction::edits`](crate::Transaction::edits)
+/// of the transaction passed to `amend`. A rejected amendment changes
+/// nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AmendError {
+    /// The transaction isn't in any undo or redo history of the set. It was
+    /// never applied in this set, or a later transaction dropped it from the
+    /// redo histories.
+    UnknownTransaction {
+        /// The transaction that was asked for.
+        transaction: TransactionId,
+    },
+    /// The transaction was undone and hasn't been redone, so it sits in the
+    /// redo histories.
+    Undone {
+        /// The transaction that was asked for.
+        transaction: TransactionId,
+    },
+    /// An edit names a buffer in the set that the transaction didn't touch.
+    Untouched {
+        /// The edit's index.
+        edit: usize,
+        /// The buffer it names.
+        buffer: BufferId,
+    },
+    /// An edit names a buffer whose undo history has a later transaction on
+    /// top of the one being amended.
+    NotOnTop {
+        /// The edit's index.
+        edit: usize,
+        /// The buffer it names.
+        buffer: BufferId,
+    },
+    /// The edits fail one of the checks
+    /// [`BufferSet::apply`](crate::BufferSet::apply) makes, run against the
+    /// text after the transaction being amended.
+    Transaction(TransactionError),
+}
+
+impl fmt::Display for AmendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::UnknownTransaction { transaction } => {
+                write!(f, "{transaction:?} isn't in any history of the set")
+            }
+            Self::Undone { transaction } => {
+                write!(f, "{transaction:?} was undone, so it can't be amended")
+            }
+            Self::Untouched { edit, buffer } => write!(
+                f,
+                "edit {edit} names {buffer:?}, which the transaction didn't touch"
+            ),
+            Self::NotOnTop { edit, buffer } => write!(
+                f,
+                "edit {edit} names {buffer:?}, which has a later transaction on top"
+            ),
+            Self::Transaction(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for AmendError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Transaction(error) => Some(error),
+            _ => None,
+        }
+    }
+}

@@ -15,10 +15,12 @@ use crate::{Buffer, BufferId, Point, TextBuffer, TextError, Utf16Point};
 /// A buffer starts at version 0 when [`BufferSet::add`] adds it. Each
 /// successful [`apply`](BufferSet::apply), [`undo`](BufferSet::undo) and
 /// [`redo`](BufferSet::redo) adds exactly one to the version of every buffer
-/// the transaction touched, however many edits it had there. A transaction
-/// whose edits leave the text as it was still counts. Nothing else changes a
-/// version: not a failed `apply`, not an undo or redo that returns
-/// `Ok(None)` or an error, and not [`get`](BufferSet::get),
+/// the transaction touched, however many edits it had there. Each
+/// successful [`amend`](crate::BufferSet::amend) adds one to the version of
+/// every buffer its new edits touched. A transaction or amend whose edits
+/// leave the text as it was still counts. Nothing else changes a version: not a failed `apply` or
+/// `amend`, not an undo or redo that returns `Ok(None)` or an error, and not
+/// [`get`](BufferSet::get),
 /// [`version`](BufferSet::version) or [`snapshot`](BufferSet::snapshot).
 /// Buffers a transaction didn't touch keep their versions.
 ///

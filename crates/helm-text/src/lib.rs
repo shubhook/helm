@@ -75,7 +75,7 @@ pub use encoding::{
     ByteOrder, DecodeError, Decoded, FileFormat, LineEnding, LineEndingStyle, LineEndings,
     UTF16_SAMPLE_LEN,
 };
-pub use error::{HistoryError, TextError, TransactionError};
+pub use error::{AmendError, HistoryError, TextError, TransactionError};
 pub use snapshot::{Snapshot, Version};
 pub use transaction::{BufferId, Edit, Transaction, TransactionId};
 
