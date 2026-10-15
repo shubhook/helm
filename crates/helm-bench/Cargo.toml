@@ -37,3 +37,7 @@ harness = false
 [[bench]]
 name = "encoding"
 harness = false
+
+[[bench]]
+name = "snapshots"
+harness = false
