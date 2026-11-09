@@ -55,7 +55,6 @@ harness = false
 name = "amend"
 harness = false
 
-
 [[bench]]
 name = "cursor"
 harness = false
