@@ -57,20 +57,107 @@ jobs:
           command: check
           arguments: --all-features --locked
 
-  # Fails a PR when a benchmark gets slower than its budget in
-  # crates/helm-bench/budgets.toml (NF-7). Numbers from an earlier run on a
-  # different hosted runner are too noisy to compare against, so this job
-  # benchmarks the PR's base commit and its head on the same machine.
-  bench:
-    name: bench
+  # The PR benchmark check runs in three jobs. bench-plan lists the bench
+  # targets and splits them into shards. Each bench-shard job benchmarks its
+  # targets on the PR's base commit and on its head, alternating, on one
+  # runner. bench then merges every shard's results and checks them against
+  # crates/helm-bench/budgets.toml (NF-7).
+  #
+  # Numbers from an earlier run on a different hosted runner are too noisy to
+  # compare against, so every benchmark's base and head runs happen on the
+  # same machine. Different benchmarks may run on different machines; a
+  # benchmark is only ever compared with itself.
+  bench-plan:
+    name: bench-plan
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
-        # Adds -o pipefail, so `bench-compare | tee` fails when bench-compare does.
         shell: bash
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      # Upper bound on parallel bench-shard jobs. Targets are dealt out
+      # round-robin, so a shard holds at most ceil(targets / MAX_SHARDS).
+      MAX_SHARDS: 8
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      has_head: ${{ steps.plan.outputs.has_head }}
+      has_base: ${{ steps.plan.outputs.has_base }}
+    steps:
+      # The default ref for a pull request is the merge of head into base,
+      # which is the code that would land.
+      - uses: actions/checkout@v7.0.1
+
+      - name: Check out the base commit
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install
+          (cd "$RUNNER_TEMP/base" && rustup toolchain install)
+
+      # Lists helm-bench's bench targets on each side. A side with none, or
+      # with no helm-bench at all, is skipped, and when head has none there
+      # is nothing to compare. bench-compare treats an empty head as an
+      # error, so it must not run then.
+      - name: Plan shards
+        id: plan
+        run: |
+          list_benches() {
+            cargo metadata --no-deps --format-version 1 --locked |
+              jq -r '.packages[] | select(.name == "helm-bench") | .targets[]
+                     | select(.kind | index("bench")) | .name'
+          }
+          head_benches=$(list_benches)
+          base_benches=$(cd "$RUNNER_TEMP/base" && list_benches)
+
+          if [ -z "$head_benches" ]; then
+            msg="The head commit has no benchmarks, so there is nothing to compare."
+            echo "::notice::$msg"
+            printf '## Benchmarks\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+            echo "has_head=false" >> "$GITHUB_OUTPUT"
+            echo "shards=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "has_head=true" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$base_benches" ]; then
+            echo "has_base=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The base commit has no benchmarks; every benchmark is new."
+            echo "has_base=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Targets on either side, so a benchmark that head removes still
+          # runs on base and shows up as removed.
+          shards=$(printf '%s\n%s\n' "$head_benches" "$base_benches" | sort -u |
+            jq -R -s -c --argjson max "$MAX_SHARDS" '
+              split("\n") | map(select(length > 0)) as $t
+              | ([$max, ($t | length)] | min) as $n
+              | [range($n) as $i
+                 | {index: $i,
+                    targets: ([range($i; $t | length; $n) as $j | $t[$j]] | join(" "))}]')
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+          echo "Shards: $shards"
+
+  bench-shard:
+    name: bench-shard (${{ matrix.shard.targets }})
+    needs: bench-plan
+    if: needs.bench-plan.outputs.has_head == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.bench-plan.outputs.shards) }}
+    defaults:
+      run:
+        # Adds -o pipefail.
+        shell: bash
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      TARGETS: ${{ matrix.shard.targets }}
       # Criterion flags for every run. 10 s of measurement keeps the 100
       # samples from being cut short on a slow runner.
       BENCH_FLAGS: --warm-up-time 3 --measurement-time 10
@@ -78,8 +165,6 @@ jobs:
       # fastest median.
       ROUNDS: 3
     steps:
-      # The default ref for a pull request is the merge of head into base,
-      # which is the code that would land.
       - uses: actions/checkout@v7.0.1
 
       - name: Check out the base commit
@@ -94,59 +179,119 @@ jobs:
           (cd "$RUNNER_TEMP/base" && rustup toolchain install)
 
       - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: bench
 
-      # Counts helm-bench's bench targets in the workspace of the current
-      # directory. A side with none, or with no helm-bench at all, is skipped,
-      # and when head has none there is nothing to compare. bench-compare
-      # treats an empty head as an error, so it must not run then.
+      # A target that exists on only one side runs on that side only.
       - name: Build benchmarks
         run: |
-          count_benches() {
+          list_benches() {
             cargo metadata --no-deps --format-version 1 --locked |
-              jq '[.packages[] | select(.name == "helm-bench") | .targets[]
-                   | select(.kind | index("bench"))] | length'
+              jq -r '.packages[] | select(.name == "helm-bench") | .targets[]
+                     | select(.kind | index("bench")) | .name'
           }
-          head_benches=$(count_benches)
-          base_benches=$(cd "$RUNNER_TEMP/base" && count_benches)
+          head_benches=$(list_benches)
+          base_benches=$(cd "$RUNNER_TEMP/base" && list_benches)
 
-          if [ "$head_benches" -eq 0 ]; then
-            msg="The head commit has no benchmarks, so there is nothing to compare."
-            echo "::notice::$msg"
-            printf '## Benchmarks\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
-            echo "HAS_HEAD=false" >> "$GITHUB_ENV"
-            exit 0
+          head_args=""
+          base_args=""
+          for t in $TARGETS; do
+            if grep -qx "$t" <<< "$head_benches"; then head_args+=" --bench $t"; fi
+            if grep -qx "$t" <<< "$base_benches"; then base_args+=" --bench $t"; fi
+          done
+          echo "HEAD_ARGS=$head_args" >> "$GITHUB_ENV"
+          echo "BASE_ARGS=$base_args" >> "$GITHUB_ENV"
+
+          if [ -n "$head_args" ]; then
+            cargo bench -p helm-bench --locked $head_args --no-run
           fi
-          echo "HAS_HEAD=true" >> "$GITHUB_ENV"
-          cargo bench -p helm-bench --locked --no-run
-          cargo build -p helm-bench --bin bench-compare --locked
-
-          if [ "$base_benches" -gt 0 ]; then
-            (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked --no-run)
-            echo "HAS_BASE=true" >> "$GITHUB_ENV"
-          else
-            echo "::notice::The base commit has no benchmarks; every benchmark is new."
-            echo "HAS_BASE=false" >> "$GITHUB_ENV"
+          if [ -n "$base_args" ]; then
+            (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked $base_args --no-run)
           fi
 
       # Alternating base and head spreads any slowdown of the runner over
       # both sides instead of landing on one.
       - name: Run benchmarks
-        if: env.HAS_HEAD == 'true'
         run: |
           for round in $(seq "$ROUNDS"); do
-            if [ "$HAS_BASE" = true ]; then
+            if [ -n "$BASE_ARGS" ]; then
               echo "::group::base, round $round"
-              (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked -- $BENCH_FLAGS --save-baseline "base-$round")
+              (cd "$RUNNER_TEMP/base" && cargo bench -p helm-bench --locked $BASE_ARGS -- $BENCH_FLAGS --save-baseline "base-$round")
               echo "::endgroup::"
             fi
-            echo "::group::head, round $round"
-            cargo bench -p helm-bench --locked -- $BENCH_FLAGS --save-baseline "head-$round"
-            echo "::endgroup::"
+            if [ -n "$HEAD_ARGS" ]; then
+              echo "::group::head, round $round"
+              cargo bench -p helm-bench --locked $HEAD_ARGS -- $BENCH_FLAGS --save-baseline "head-$round"
+              echo "::endgroup::"
+            fi
           done
+
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: criterion-pr-${{ github.event.pull_request.number }}-shard-${{ matrix.shard.index }}
+          path: ${{ runner.temp }}/criterion
+          if-no-files-found: ignore
+
+  # Fails a PR when a benchmark gets slower than its budget. It runs whenever
+  # the run is not cancelled, so a failed or skipped shard fails this job
+  # instead of skipping it: a skipped job would count as passing.
+  bench:
+    name: bench
+    needs: [bench-plan, bench-shard]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Adds -o pipefail, so `bench-compare | tee` fails when bench-compare does.
+        shell: bash
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PLAN_RESULT: ${{ needs.bench-plan.result }}
+      SHARD_RESULT: ${{ needs.bench-shard.result }}
+      HAS_HEAD: ${{ needs.bench-plan.outputs.has_head }}
+      HAS_BASE: ${{ needs.bench-plan.outputs.has_base }}
+      # Must match ROUNDS in bench-shard.
+      ROUNDS: 3
+    steps:
+      - name: Check the plan and the shards
+        run: |
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "::error::bench-plan finished with result: $PLAN_RESULT"
+            exit 1
+          fi
+          if [ "$HAS_HEAD" != true ]; then
+            echo "The head commit has no benchmarks, so there is nothing to compare."
+            exit 0
+          fi
+          if [ "$SHARD_RESULT" != success ]; then
+            echo "::error::A bench-shard job finished with result: $SHARD_RESULT"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7.0.1
+        if: env.HAS_HEAD == 'true'
+
+      - name: Install Rust toolchain
+        if: env.HAS_HEAD == 'true'
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        if: env.HAS_HEAD == 'true'
+        with:
+          shared-key: bench-compare
+
+      - uses: actions/download-artifact@v7.0.0
+        if: env.HAS_HEAD == 'true'
+        with:
+          pattern: criterion-pr-${{ github.event.pull_request.number }}-shard-*
+          path: ${{ runner.temp }}/criterion
+          merge-multiple: true
 
       - name: Compare against budgets
         if: env.HAS_HEAD == 'true'
         run: |
+          cargo build -p helm-bench --bin bench-compare --locked
           args=()
           for round in $(seq "$ROUNDS"); do
             if [ "$HAS_BASE" = true ]; then
@@ -157,16 +302,9 @@ jobs:
           {
             echo "## Benchmarks: base ${BASE_SHA::7} vs head"
             echo
-            target/debug/bench-compare --criterion-dir "$CRITERION_HOME" \
+            target/debug/bench-compare --criterion-dir "$RUNNER_TEMP/criterion" \
               --budgets crates/helm-bench/budgets.toml "${args[@]}"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v7.0.2
-        if: always()
-        with:
-          name: criterion-pr-${{ github.event.pull_request.number }}
-          path: ${{ runner.temp }}/criterion
-          if-no-files-found: ignore
 
   # Keeps a record of benchmark times on main, one artifact per commit.
   bench-record:
