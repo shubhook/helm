@@ -7,7 +7,7 @@
 //! [`Editor::extend_selections`]: crate::Editor::extend_selections
 //! [`Editor::delete_to`]: crate::Editor::delete_to
 
-use helm_text::{Buffer, TextBuffer};
+use helm_text::{Buffer, TextBuffer, TextError};
 
 use crate::editor::is_word;
 
@@ -87,39 +87,96 @@ pub enum Motion {
     TextEnd,
 }
 
-/// Where `motion` takes a head at `head`, a char boundary of `buffer`'s
-/// text. [`Motion::Up`] and [`Motion::Down`] aim for column `goal`, or the
-/// head's own column without one.
+/// Where `motion` takes a head at `head`, and the goal column it used:
+/// `goal`, or for Up and Down without one, the head's own column. Other
+/// motions return a goal of 0, which callers ignore.
 ///
-/// It reads a few small windows of text around the head, and for Up and
-/// Down the head's line and the line it moves to. It never copies the
-/// whole text.
-pub(crate) fn target(buffer: &Buffer, head: usize, motion: Motion, goal: Option<usize>) -> usize {
-    match motion {
-        Motion::Left => left(&mut Backward::new(buffer, head)),
-        Motion::Right => right(&mut Forward::new(buffer, head)),
-        Motion::Up => vertical(buffer, head, false, goal),
-        Motion::Down => vertical(buffer, head, true, goal),
-        Motion::WordLeft => word_left(buffer, head),
-        Motion::WordRight => word_right(buffer, head),
-        Motion::LineStart => line_start(buffer, head).unwrap_or(head),
-        Motion::LineEnd => line_end(buffer, head).unwrap_or(head),
-        Motion::TextStart => 0,
-        Motion::TextEnd => buffer.len_bytes(),
+/// Returns `None` if `head` isn't a valid offset: past the end of the
+/// text, or inside a char. A valid head is one clamping would leave as it
+/// is, so callers that get `Some` for every selection need not clamp. The
+/// check costs nothing extra: it comes from the first read near the head.
+///
+/// Every motion reads small windows of text next to the head. Up and Down
+/// scan at most [`SCAN_LIMIT`] bytes and use the line index past that, so a
+/// very long line costs a few index lookups, not a scan. Nothing copies
+/// the whole text.
+pub(crate) fn try_target(
+    buffer: &Buffer,
+    head: usize,
+    motion: Motion,
+    goal: Option<usize>,
+) -> Option<(usize, usize)> {
+    if head > buffer.len_bytes() {
+        return None;
     }
+    let at = match motion {
+        Motion::Left => {
+            let mut reader = Backward::new(buffer, head);
+            let at = left(&mut reader);
+            reader.valid().then_some(at)?
+        }
+        Motion::Right => {
+            let mut reader = Forward::new(buffer, head);
+            let at = right(&mut reader);
+            reader.valid().then_some(at)?
+        }
+        Motion::Up | Motion::Down => {
+            let down = motion == Motion::Down;
+            return match vertical_scan(buffer, head, down, goal) {
+                Scan::Done(at, goal) => Some((at, goal)),
+                Scan::Invalid => None,
+                Scan::TooLong => vertical_by_lines(buffer, head, down, goal),
+            };
+        }
+        Motion::WordLeft => word_left(buffer, head)?,
+        Motion::WordRight => word_right(buffer, head)?,
+        Motion::LineStart => line_start(buffer, head)?,
+        Motion::LineEnd => line_end(buffer, head)?,
+        Motion::TextStart => is_valid(buffer, head).then_some(0)?,
+        Motion::TextEnd => is_valid(buffer, head).then_some(buffer.len_bytes())?,
+    };
+    Some((at, 0))
 }
 
-/// The column of `head`, in chars from the start of its line, capped at
-/// the line's length without its line break.
-pub(crate) fn column(buffer: &Buffer, head: usize) -> usize {
-    line_column(buffer, head).1
+/// Where `motion` takes `head`, a clamped offset, aiming for column `goal`
+/// on Up and Down.
+pub(crate) fn target(buffer: &Buffer, head: usize, motion: Motion, goal: Option<usize>) -> usize {
+    try_target(buffer, head, motion, goal).map_or(head, |(at, _)| at)
 }
 
-/// The first window a reader takes, in bytes. Each later one doubles, so a
-/// long run of one class takes a few reads, not one per window.
+/// Whether `at` is an offset clamping leaves as it is: at most the length,
+/// and on a char boundary.
+pub(crate) fn is_valid(buffer: &Buffer, at: usize) -> bool {
+    at <= buffer.len_bytes() && buffer.byte_to_char(at).is_ok()
+}
+
+/// Whether valid offset `at` sits between the CR and the LF of a CRLF.
+pub(crate) fn inside_crlf(buffer: &Buffer, at: usize) -> bool {
+    at > 0
+        && buffer
+            .slice(at - 1..at + 1)
+            .is_ok_and(|text| text == "\r\n")
+}
+
+/// The most bytes Up and Down scan each way from a head before they switch
+/// to the line index. Past this limit the index costs a fixed dozen lookups
+/// however long the line is, so a minified line doesn't make each press
+/// scan it.
+const SCAN_LIMIT: usize = 512;
+
+/// The first window a word reader takes, in bytes. Each later one doubles,
+/// so a long run takes a few reads, not one per window.
 const WINDOW: usize = 32;
 
-/// Reads chars forward from an offset, one small window of text at a time.
+/// The first window Up and Down take. Down needs the rest of the head's
+/// line and the start of the next; Up needs the head's line up to it and
+/// the whole line above. For code lines of typical length (about 40 bytes)
+/// that is one read; a longer line takes a second, twice as large. A
+/// larger first window costs more on every press, because the copy out of
+/// the rope grows with it.
+const LINE_WINDOW: usize = 128;
+
+/// Reads chars forward from an offset, one window of text at a time.
 struct Forward<'a> {
     buffer: &'a Buffer,
     /// Where `window` starts in the text.
@@ -129,16 +186,29 @@ struct Forward<'a> {
     at: usize,
     /// The size of the next window.
     size: usize,
+    /// Bytes left to read before the reader stops and sets `cut`.
+    budget: usize,
+    /// The reader stopped at `budget`, not at the end of the text.
+    cut: bool,
+    /// The starting offset wasn't a char boundary.
+    invalid: bool,
 }
 
 impl<'a> Forward<'a> {
     fn new(buffer: &'a Buffer, offset: usize) -> Self {
+        Self::bounded(buffer, offset, WINDOW, usize::MAX)
+    }
+
+    fn bounded(buffer: &'a Buffer, offset: usize, size: usize, budget: usize) -> Self {
         Self {
             buffer,
             start: offset,
             window: String::new(),
             at: 0,
-            size: WINDOW,
+            size,
+            budget,
+            cut: false,
+            invalid: false,
         }
     }
 
@@ -147,28 +217,55 @@ impl<'a> Forward<'a> {
         self.start + self.at
     }
 
+    /// Whether the starting offset was valid, as far as the reader read.
+    fn valid(&self) -> bool {
+        !self.invalid
+    }
+
     /// The next char, without moving past it.
     fn peek(&mut self) -> Option<char> {
-        if self.at == self.window.len() {
-            let start = self.offset();
-            let len = self.buffer.len_bytes();
-            if start >= len {
-                return None;
-            }
-            // `start` is a char boundary and a char is at most four bytes,
-            // so stepping back finds a boundary past `start`.
-            let mut end = (start + self.size).min(len);
-            self.window = loop {
-                match self.buffer.slice(start..end) {
-                    Ok(window) => break window,
-                    Err(_) => end -= 1,
-                }
-            };
-            self.start = start;
-            self.at = 0;
-            self.size *= 2;
+        if self.at == self.window.len() && !self.fill() {
+            return None;
         }
         self.window[self.at..].chars().next()
+    }
+
+    /// Reads the next window. False at the end of the text, at the budget,
+    /// or if the starting offset was invalid.
+    fn fill(&mut self) -> bool {
+        let start = self.offset();
+        let len = self.buffer.len_bytes();
+        if start >= len || self.invalid {
+            return false;
+        }
+        if self.budget == 0 {
+            self.cut = true;
+            return false;
+        }
+        // At least four bytes, so stepping back always finds a boundary.
+        let mut end = start
+            .saturating_add(self.size.min(self.budget).max(4))
+            .min(len);
+        let window = loop {
+            match self.buffer.slice(start..end) {
+                Ok(window) => break window,
+                // `start` is a boundary and a char is at most four bytes,
+                // so stepping back finds one past `start`.
+                Err(TextError::NotCharBoundary { offset }) if offset == end && end > start + 1 => {
+                    end -= 1;
+                }
+                Err(_) => {
+                    self.invalid = true;
+                    return false;
+                }
+            }
+        };
+        self.budget = self.budget.saturating_sub(window.len());
+        self.window = window;
+        self.start = start;
+        self.at = 0;
+        self.size = self.size.saturating_mul(2);
+        true
     }
 
     /// Moves past the next char, if there is one.
@@ -177,29 +274,75 @@ impl<'a> Forward<'a> {
             self.at += c.len_utf8();
         }
     }
+
+    /// Moves to the next line break, or the end of what it can read.
+    fn skip_line(&mut self) {
+        while self.at < self.window.len() || self.fill() {
+            match self.window[self.at..].find(['\n', '\r']) {
+                Some(i) => {
+                    self.at += i;
+                    return;
+                }
+                None => self.at = self.window.len(),
+            }
+        }
+    }
+
+    /// Moves `count` chars forward, stopping early at a line break or the
+    /// end of what it can read.
+    fn skip_chars(&mut self, mut count: usize) {
+        while count > 0 && (self.at < self.window.len() || self.fill()) {
+            let rest = &self.window[self.at..];
+            let mut moved = rest.len();
+            for (i, c) in rest.char_indices() {
+                if count == 0 || is_break(c) {
+                    moved = i;
+                    count = 0;
+                    break;
+                }
+                count -= 1;
+            }
+            self.at += moved;
+        }
+    }
 }
 
-/// Reads chars backward from an offset, one small window of text at a
-/// time.
+/// Reads chars backward from an offset, one window of text at a time. The
+/// windows it reads stay joined in `text`, so Up can look forward through
+/// the line it scanned back over.
 struct Backward<'a> {
     buffer: &'a Buffer,
-    /// Where `window` starts in the text.
+    /// Where `text` starts in the text.
     start: usize,
-    window: String,
-    /// How far into `window` the reader is: chars before it are unread.
+    /// Everything read so far, from `start` to the starting offset.
+    text: String,
+    /// How far into `text` the reader is: chars before it are unread.
     at: usize,
     /// The size of the next window.
     size: usize,
+    /// Bytes left to read before the reader stops and sets `cut`.
+    budget: usize,
+    /// The reader stopped at `budget`, not at offset 0.
+    cut: bool,
+    /// The starting offset wasn't a char boundary.
+    invalid: bool,
 }
 
 impl<'a> Backward<'a> {
     fn new(buffer: &'a Buffer, offset: usize) -> Self {
+        Self::bounded(buffer, offset, WINDOW, usize::MAX)
+    }
+
+    fn bounded(buffer: &'a Buffer, offset: usize, size: usize, budget: usize) -> Self {
         Self {
             buffer,
             start: offset,
-            window: String::new(),
+            text: String::new(),
             at: 0,
-            size: WINDOW,
+            size,
+            budget,
+            cut: false,
+            invalid: false,
         }
     }
 
@@ -208,26 +351,55 @@ impl<'a> Backward<'a> {
         self.start + self.at
     }
 
+    /// Whether the starting offset was valid, as far as the reader read.
+    fn valid(&self) -> bool {
+        !self.invalid
+    }
+
     /// The char before the reader, without moving past it.
     fn peek(&mut self) -> Option<char> {
-        if self.at == 0 {
-            let end = self.offset();
-            if end == 0 {
-                return None;
-            }
-            // 0 is a char boundary, so stepping back finds one.
-            let mut start = end.saturating_sub(self.size);
-            self.window = loop {
-                match self.buffer.slice(start..end) {
-                    Ok(window) => break window,
-                    Err(_) => start -= 1,
-                }
-            };
-            self.start = start;
-            self.at = self.window.len();
-            self.size *= 2;
+        if self.at == 0 && !self.fill() {
+            return None;
         }
-        self.window[..self.at].chars().next_back()
+        self.text[..self.at].chars().next_back()
+    }
+
+    /// Reads the window before `start`. False at offset 0, at the budget,
+    /// or if the starting offset was invalid.
+    fn fill(&mut self) -> bool {
+        let end = self.start;
+        if end == 0 || self.invalid {
+            return false;
+        }
+        if self.budget == 0 {
+            self.cut = true;
+            return false;
+        }
+        // At least four bytes, so stepping back always finds a boundary.
+        let mut start = end.saturating_sub(self.size.min(self.budget).max(4));
+        let window = loop {
+            match self.buffer.slice(start..end) {
+                Ok(window) => break window,
+                // 0 is a boundary, so stepping back finds one.
+                Err(TextError::NotCharBoundary { offset }) if offset == start && start > 0 => {
+                    start -= 1;
+                }
+                Err(_) => {
+                    self.invalid = true;
+                    return false;
+                }
+            }
+        };
+        self.budget = self.budget.saturating_sub(window.len());
+        self.at = window.len();
+        if self.text.is_empty() {
+            self.text = window;
+        } else {
+            self.text.insert_str(0, &window);
+        }
+        self.start = start;
+        self.size = self.size.saturating_mul(2);
+        true
     }
 
     /// Moves back past the char before the reader, if there is one.
@@ -235,6 +407,28 @@ impl<'a> Backward<'a> {
         if let Some(c) = self.peek() {
             self.at -= c.len_utf8();
         }
+    }
+
+    /// Moves back to just after the previous line break, or the start of
+    /// what it can read, and returns how many chars it moved over.
+    fn skip_line(&mut self) -> usize {
+        let mut chars = 0;
+        while self.at > 0 || self.fill() {
+            let before = &self.text[..self.at];
+            match before.rfind(['\n', '\r']) {
+                Some(i) => {
+                    // A line break is one byte, so the line starts after it.
+                    chars += before[i + 1..].chars().count();
+                    self.at = i + 1;
+                    return chars;
+                }
+                None => {
+                    chars += before.chars().count();
+                    self.at = 0;
+                }
+            }
+        }
+        chars
     }
 }
 
@@ -288,54 +482,56 @@ fn left(reader: &mut Backward<'_>) -> usize {
     reader.offset()
 }
 
-/// [`Motion::WordRight`] from `head`.
-fn word_right(buffer: &Buffer, head: usize) -> usize {
+/// [`Motion::WordRight`] from `head`, or `None` if `head` is invalid.
+fn word_right(buffer: &Buffer, head: usize) -> Option<usize> {
     let mut reader = Forward::new(buffer, head);
-    match reader.peek() {
-        None => return head,
-        Some(c) if is_break(c) => return right(&mut reader),
-        Some(_) => {}
-    }
-    while reader.peek().is_some_and(is_blank) {
-        reader.advance();
-    }
-    let Some(run) = reader.peek().filter(|&c| !is_break(c)).map(class) else {
-        return reader.offset();
+    let at = match reader.peek() {
+        None => head,
+        Some(c) if is_break(c) => right(&mut reader),
+        Some(_) => {
+            while reader.peek().is_some_and(is_blank) {
+                reader.advance();
+            }
+            if let Some(run) = reader.peek().filter(|&c| !is_break(c)).map(class) {
+                while reader
+                    .peek()
+                    .is_some_and(|c| !is_break(c) && class(c) == run)
+                {
+                    reader.advance();
+                }
+            }
+            reader.offset()
+        }
     };
-    while reader
-        .peek()
-        .is_some_and(|c| !is_break(c) && class(c) == run)
-    {
-        reader.advance();
-    }
-    reader.offset()
+    reader.valid().then_some(at)
 }
 
-/// [`Motion::WordLeft`] from `head`.
-fn word_left(buffer: &Buffer, head: usize) -> usize {
+/// [`Motion::WordLeft`] from `head`, or `None` if `head` is invalid.
+fn word_left(buffer: &Buffer, head: usize) -> Option<usize> {
     let mut reader = Backward::new(buffer, head);
-    match reader.peek() {
-        None => return head,
-        Some(c) if is_break(c) => return left(&mut reader),
-        Some(_) => {}
-    }
-    while reader.peek().is_some_and(is_blank) {
-        reader.advance();
-    }
-    let Some(run) = reader.peek().filter(|&c| !is_break(c)).map(class) else {
-        return reader.offset();
+    let at = match reader.peek() {
+        None => head,
+        Some(c) if is_break(c) => left(&mut reader),
+        Some(_) => {
+            while reader.peek().is_some_and(is_blank) {
+                reader.advance();
+            }
+            if let Some(run) = reader.peek().filter(|&c| !is_break(c)).map(class) {
+                while reader
+                    .peek()
+                    .is_some_and(|c| !is_break(c) && class(c) == run)
+                {
+                    reader.advance();
+                }
+            }
+            reader.offset()
+        }
     };
-    while reader
-        .peek()
-        .is_some_and(|c| !is_break(c) && class(c) == run)
-    {
-        reader.advance();
-    }
-    reader.offset()
+    reader.valid().then_some(at)
 }
 
 /// [`Motion::LineStart`] from `head`: the line's first non-blank, or the
-/// line's start if the head is already there.
+/// line's start if the head is already there. `None` if `head` is invalid.
 fn line_start(buffer: &Buffer, head: usize) -> Option<usize> {
     let start = buffer.line_to_byte(buffer.byte_to_line(head).ok()?).ok()?;
     let mut reader = Forward::new(buffer, start);
@@ -346,68 +542,229 @@ fn line_start(buffer: &Buffer, head: usize) -> Option<usize> {
     Some(if head == first { start } else { first })
 }
 
-/// [`Motion::LineEnd`] from `head`: the end of its line's text, before the
-/// line break.
+/// [`Motion::LineEnd`] from `head`, or `None` if `head` is invalid.
 fn line_end(buffer: &Buffer, head: usize) -> Option<usize> {
-    let line = buffer.byte_to_line(head).ok()?;
+    text_end(buffer, buffer.byte_to_line(head).ok()?)
+}
+
+/// Where line `line`'s text ends, before its line break.
+fn text_end(buffer: &Buffer, line: usize) -> Option<usize> {
     if line + 1 >= buffer.len_lines() {
         return Some(buffer.len_bytes());
     }
     let next = buffer.line_to_byte(line + 1).ok()?;
-    Some(left(&mut Backward::new(buffer, next)))
+    let mut reader = Backward::new(buffer, next);
+    let at = left(&mut reader);
+    reader.valid().then_some(at)
 }
 
-/// A reader just after `head`'s line start, and `head`'s column as
-/// [`column`] counts it. A head between the CR and LF of a CRLF counts
+/// How a bounded scan for Up or Down ended.
+enum Scan {
+    /// The target and the goal column used.
+    Done(usize, usize),
+    /// The head isn't a valid offset.
+    Invalid,
+    /// A line ran past [`SCAN_LIMIT`]; use the line index instead.
+    TooLong,
+}
+
+/// Up (`down` false) or Down from `head` by scanning the text next to it,
+/// at most [`SCAN_LIMIT`] bytes each way. Without a `goal`, the goal is the
+/// head's column. A head between the CR and LF of a CRLF counts its column
 /// from before the CR.
-fn line_column(buffer: &Buffer, head: usize) -> (Backward<'_>, usize) {
-    let mut reader = Backward::new(buffer, head);
-    if reader.peek() == Some('\r') && Forward::new(buffer, head).peek() == Some('\n') {
-        reader.advance();
-    }
-    let mut column = 0;
-    while reader.peek().is_some_and(|c| !is_break(c)) {
-        reader.advance();
-        column += 1;
-    }
-    (reader, column)
-}
-
-/// Moves `reader` up to `column` chars forward, stopping before a line
-/// break, and returns where it ends.
-fn to_column(reader: &mut Forward<'_>, column: usize) -> usize {
-    for _ in 0..column {
-        if !reader.peek().is_some_and(|c| !is_break(c)) {
-            break;
+fn vertical_scan(buffer: &Buffer, head: usize, down: bool, goal: Option<usize>) -> Scan {
+    // Down with a goal never needs the head's own line: skip reading it.
+    let mut back = None;
+    let goal = match goal {
+        Some(goal) if down => goal,
+        _ => {
+            let mut reader = Backward::bounded(buffer, head, LINE_WINDOW, SCAN_LIMIT);
+            if reader.peek() == Some('\r') && Forward::new(buffer, head).peek() == Some('\n') {
+                reader.advance();
+            }
+            let column = reader.skip_line();
+            if !reader.valid() {
+                return Scan::Invalid;
+            }
+            if reader.cut {
+                return Scan::TooLong;
+            }
+            back = Some(reader);
+            goal.unwrap_or(column)
         }
-        reader.advance();
-    }
-    reader.offset()
-}
+    };
 
-/// Up (`down` false) or Down from `head`, at column `goal` or the head's
-/// own column. It reads the head's line and the line it moves to.
-fn vertical(buffer: &Buffer, head: usize, down: bool, goal: Option<usize>) -> usize {
-    let (mut back, own) = line_column(buffer, head);
-    let column = goal.unwrap_or(own);
     if down {
-        let mut reader = Forward::new(buffer, head);
-        while reader.peek().is_some_and(|c| !is_break(c)) {
-            reader.advance();
-        }
+        let mut reader = Forward::bounded(buffer, head, LINE_WINDOW, SCAN_LIMIT);
+        reader.skip_line();
         if reader.peek().is_none() {
-            return buffer.len_bytes();
+            return match (reader.valid(), reader.cut) {
+                (false, _) => Scan::Invalid,
+                (true, true) => Scan::TooLong,
+                (true, false) => Scan::Done(buffer.len_bytes(), goal),
+            };
         }
         right(&mut reader);
-        to_column(&mut reader, column)
+        reader.skip_chars(goal);
+        return match (reader.valid(), reader.cut) {
+            (false, _) => Scan::Invalid,
+            (true, true) => Scan::TooLong,
+            (true, false) => Scan::Done(reader.offset(), goal),
+        };
+    }
+
+    let Some(mut reader) = back else {
+        return Scan::Invalid;
+    };
+    if reader.offset() == 0 {
+        return Scan::Done(0, goal);
+    }
+    let line_end = left(&mut reader);
+    reader.skip_line();
+    if reader.cut {
+        return Scan::TooLong;
+    }
+    // The line above is in what the reader read: walk `goal` chars into it.
+    let line = &reader.text[reader.at..line_end - reader.start];
+    let at = line
+        .char_indices()
+        .nth(goal)
+        .map_or(line.len(), |(at, _)| at);
+    Scan::Done(reader.offset() + at, goal)
+}
+
+/// Up (`down` false) or Down from `head` through the line index: a fixed
+/// number of lookups however long the lines are. `None` if `head` is
+/// invalid.
+fn vertical_by_lines(
+    buffer: &Buffer,
+    head: usize,
+    down: bool,
+    goal: Option<usize>,
+) -> Option<(usize, usize)> {
+    let line = buffer.byte_to_line(head).ok()?;
+    let goal = match goal {
+        Some(goal) => goal,
+        None => {
+            let start = buffer.byte_to_char(buffer.line_to_byte(line).ok()?).ok()?;
+            buffer
+                .byte_to_char(head.min(text_end(buffer, line)?))
+                .ok()?
+                - start
+        }
+    };
+    let target = if down {
+        if line + 1 >= buffer.len_lines() {
+            return Some((buffer.len_bytes(), goal));
+        }
+        line + 1
     } else {
-        if back.peek().is_none() {
-            return 0;
+        match line.checked_sub(1) {
+            Some(target) => target,
+            None => return Some((0, goal)),
         }
-        left(&mut back);
-        while back.peek().is_some_and(|c| !is_break(c)) {
-            back.advance();
+    };
+    let start = buffer
+        .byte_to_char(buffer.line_to_byte(target).ok()?)
+        .ok()?;
+    let end = buffer.byte_to_char(text_end(buffer, target)?).ok()?;
+    let at = buffer
+        .char_to_byte(start.saturating_add(goal).min(end))
+        .ok()?;
+    Some((at, goal))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every char boundary of `text` that isn't inside a CRLF.
+    fn positions(text: &str) -> Vec<usize> {
+        text.char_indices()
+            .map(|(at, _)| at)
+            .chain([text.len()])
+            .filter(|&at| !(at > 0 && text[..at].ends_with('\r') && text[at..].starts_with('\n')))
+            .collect()
+    }
+
+    /// Lines short enough to scan and long enough to need the line index,
+    /// with every line break and char width.
+    fn mixed_text() -> String {
+        let long = "ab é中😀 ".repeat(SCAN_LIMIT / 4);
+        format!("x\r\nab中cd\n{long}\r\n\n😀é\r{long}\nshort\r\n{long}")
+    }
+
+    #[test]
+    fn the_scan_and_the_line_index_agree() {
+        let text = mixed_text();
+        let buffer = Buffer::from(text.as_str());
+        for at in positions(&text) {
+            for down in [false, true] {
+                for goal in [None, Some(0), Some(3), Some(SCAN_LIMIT), Some(usize::MAX)] {
+                    let by_lines = vertical_by_lines(&buffer, at, down, goal);
+                    match vertical_scan(&buffer, at, down, goal) {
+                        Scan::Done(to, used) => {
+                            assert_eq!(Some((to, used)), by_lines, "{at} {down} {goal:?}");
+                        }
+                        Scan::TooLong => assert!(by_lines.is_some()),
+                        Scan::Invalid => panic!("{at} is valid"),
+                    }
+                }
+            }
         }
-        to_column(&mut Forward::new(buffer, back.offset()), column)
+    }
+
+    #[test]
+    fn long_lines_use_the_line_index() {
+        let text = mixed_text();
+        let buffer = Buffer::from(text.as_str());
+        // 64 repeats of the 13-byte piece into the long line after "😀é\r":
+        // more than SCAN_LIMIT from both of its ends.
+        let start = text.find("😀é\r").expect("in the text") + "😀é\r".len();
+        let middle = start + 13 * (SCAN_LIMIT / 8);
+        for down in [false, true] {
+            assert!(matches!(
+                vertical_scan(&buffer, middle, down, None),
+                Scan::TooLong
+            ));
+        }
+        assert_eq!(
+            try_target(&buffer, middle, Motion::Down, None),
+            vertical_by_lines(&buffer, middle, true, None)
+        );
+    }
+
+    #[test]
+    fn invalid_heads_are_reported() {
+        let buffer = Buffer::from("aé\r\nb");
+        for motion in [
+            Motion::Left,
+            Motion::Right,
+            Motion::Up,
+            Motion::Down,
+            Motion::WordLeft,
+            Motion::WordRight,
+            Motion::LineStart,
+            Motion::LineEnd,
+            Motion::TextStart,
+            Motion::TextEnd,
+        ] {
+            assert_eq!(try_target(&buffer, 2, motion, None), None, "{motion:?}");
+            assert_eq!(try_target(&buffer, 7, motion, None), None, "{motion:?}");
+            assert!(try_target(&buffer, 3, motion, None).is_some(), "{motion:?}");
+        }
+    }
+
+    #[test]
+    fn small_windows_never_split_a_char() {
+        // The budget runs down to fewer bytes than a char holds.
+        let text = "😀".repeat(200);
+        let buffer = Buffer::from(text.as_str());
+        let mut reader = Forward::bounded(&buffer, 0, 3, 7);
+        reader.skip_line();
+        assert!(reader.valid() && reader.cut);
+        let mut reader = Backward::bounded(&buffer, text.len(), 3, 7);
+        reader.skip_line();
+        assert!(reader.valid() && reader.cut);
     }
 }

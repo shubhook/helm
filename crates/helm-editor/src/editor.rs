@@ -8,7 +8,7 @@ use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
 };
 
-use crate::motion::{column, target};
+use crate::motion::{inside_crlf, is_valid, target, try_target};
 use crate::{EditorError, Motion, Selection, Selections};
 
 /// The selections on one buffer of a [`BufferSet`], and the commands that
@@ -583,68 +583,64 @@ impl Editor {
         extend: bool,
     ) -> Result<bool, EditorError> {
         let buffer = self.buffer_in(set)?;
-        let old = self.selections.clone();
-        let clamped = clamp(buffer, &self.selections);
         let vertical = matches!(motion, Motion::Up | Motion::Down);
-        // Clamping keeps the order, so the goals still line up unless it
-        // merged selections. Then the merged ones start over from their
-        // columns.
         let goals = std::mem::take(&mut self.goals);
-        let goals = if vertical && goals.len() == clamped.as_slice().len() {
-            goals
-        } else {
-            Vec::new()
+
+        // Usually every offset is valid, so clamping would change nothing.
+        // Each motion checks the head as it reads next to it, which costs
+        // nothing extra, and only when one isn't valid do the selections get
+        // clamped first, as the type docs describe.
+        let (moved, primary) = match moved(buffer, &self.selections, motion, extend, &goals) {
+            Some(moved) => (moved, self.selections.primary_index()),
+            None => {
+                let clamped = clamp(buffer, &self.selections);
+                // Clamping keeps the order, so the goals still line up
+                // unless it merged selections. Then the merged ones start
+                // over from their columns.
+                let goals = if goals.len() == clamped.as_slice().len() {
+                    goals
+                } else {
+                    Vec::new()
+                };
+                let moved = moved(buffer, &clamped, motion, extend, &goals)
+                    .expect("clamped offsets are valid");
+                (moved, clamped.primary_index())
+            }
         };
 
-        let mut moved = Vec::with_capacity(clamped.as_slice().len());
-        let mut new_goals = Vec::new();
-        for (i, &selection) in clamped.as_slice().iter().enumerate() {
-            let head = selection.head;
-            let to = if vertical {
-                let goal = match goals.get(i) {
-                    Some(&goal) => goal,
-                    None => column(buffer, head),
-                };
-                new_goals.push(goal);
-                target(buffer, head, motion, Some(goal))
-            } else if !extend && !selection.is_empty() && motion == Motion::Left {
-                selection.start()
-            } else if !extend && !selection.is_empty() && motion == Motion::Right {
-                selection.end()
-            } else {
-                target(buffer, head, motion, None)
-            };
-            moved.push(if extend {
-                Selection::new(selection.anchor, to)
-            } else {
-                Selection::cursor(to)
-            });
-        }
-        // Each moved selection's head, with its goal, sorted by head.
-        let mut heads: Vec<(usize, usize)> = moved
-            .iter()
-            .zip(new_goals)
-            .map(|(selection, goal)| (selection.head, goal))
-            .collect();
-        self.selections = normal(moved, clamped.primary_index());
+        let mut members: Vec<(usize, usize)> = Vec::new();
         if vertical {
-            // Each selection keeps the goal of a selection merged into it:
-            // one whose head it holds.
-            heads.sort_unstable();
-            self.goals = self
-                .selections
+            members = moved
+                .iter()
+                .map(|&(selection, goal)| (selection.start(), goal))
+                .collect();
+        }
+        let selections = normal(
+            moved.into_iter().map(|(selection, _)| selection).collect(),
+            primary,
+        );
+        if vertical {
+            // Each merged selection starts where one of the selections
+            // merged into it starts, and no selection that stayed apart
+            // starts there too: a non-empty one that only touches starts
+            // at its end, and an empty one there would have merged. So the
+            // first moved selection with that start is one of its own, and
+            // its goal is the one it keeps.
+            if !members.is_sorted_by_key(|&(start, _)| start) {
+                members.sort_by_key(|&(start, _)| start);
+            }
+            self.goals = selections
                 .as_slice()
                 .iter()
                 .map(|merged| {
-                    let i = heads.partition_point(|&(head, _)| head < merged.start());
-                    match heads.get(i) {
-                        Some(&(head, goal)) if head <= merged.end() => goal,
-                        _ => column(buffer, merged.head),
-                    }
+                    let i = members.partition_point(|&(start, _)| start < merged.start());
+                    members.get(i).map_or(0, |&(_, goal)| goal)
                 })
                 .collect();
         }
-        Ok(self.selections != old)
+        let changed = selections != self.selections;
+        self.selections = selections;
+        Ok(changed)
     }
 
     /// Adds a cursor on the line above or below every selection's head.
@@ -706,6 +702,65 @@ fn clamp_offset(buffer: &Buffer, offset: usize) -> usize {
         offset -= 1;
     }
     offset
+}
+
+/// Every selection in `selections` moved by `motion` as
+/// [`Editor::move_cursors`] (or, with `extend`, as
+/// [`Editor::extend_selections`]) does, each with its goal column, before
+/// normal form. `goals` lines up with `selections`, or is empty. Returns
+/// `None` if an offset that matters isn't valid, so the caller clamps
+/// first.
+fn moved(
+    buffer: &Buffer,
+    selections: &Selections,
+    motion: Motion,
+    extend: bool,
+    goals: &[usize],
+) -> Option<Vec<(Selection, usize)>> {
+    let mut moved = Vec::with_capacity(selections.as_slice().len());
+    for (i, &selection) in selections.as_slice().iter().enumerate() {
+        let collapse = !extend && !selection.is_empty();
+        if !selection.is_empty() && !is_valid(buffer, selection.anchor) {
+            return None;
+        }
+        let (to, goal) = match motion {
+            // VS Code's Left and Right collapse a selection to its side. A
+            // side between the CR and LF of a CRLF moves out of it, the way
+            // the motion itself would.
+            Motion::Left if collapse => {
+                let start = selection.start();
+                if !is_valid(buffer, selection.head) {
+                    return None;
+                }
+                let at = if inside_crlf(buffer, start) {
+                    start - 1
+                } else {
+                    start
+                };
+                (at, 0)
+            }
+            Motion::Right if collapse => {
+                let end = selection.end();
+                if !is_valid(buffer, selection.head) {
+                    return None;
+                }
+                let at = if inside_crlf(buffer, end) {
+                    end + 1
+                } else {
+                    end
+                };
+                (at, 0)
+            }
+            _ => try_target(buffer, selection.head, motion, goals.get(i).copied())?,
+        };
+        let selection = if extend {
+            Selection::new(selection.anchor, to)
+        } else {
+            Selection::cursor(to)
+        };
+        moved.push((selection, goal));
+    }
+    Some(moved)
 }
 
 /// Whether `buffer`'s text in `range` is `expected`. False for a range that
@@ -833,4 +888,102 @@ fn overlaps_any(selections: &Selections, range: &Range<usize>) -> bool {
     let list = selections.as_slice();
     let i = list.partition_point(|s| s.end() <= range.start);
     list.get(i).is_some_and(|s| s.start() < range.end)
+}
+
+#[cfg(test)]
+mod tests {
+    use helm_text::{Buffer, BufferSet, FileFormat, LineEndings};
+
+    use super::*;
+
+    fn editor(text: &str, selections: Vec<Selection>, primary: usize) -> (BufferSet, Editor) {
+        let mut set = BufferSet::new();
+        let id = set.add(Buffer::from(text));
+        let format = FileFormat {
+            bom: false,
+            line_endings: LineEndings::count(text),
+        };
+        let mut editor = Editor::new(id, format);
+        editor.set_selections(Selections::new(selections, primary).expect("valid"));
+        (set, editor)
+    }
+
+    #[test]
+    fn collapsing_never_lands_inside_a_crlf() {
+        let (set, mut e) = editor("a\r\nb", vec![Selection::new(2, 4)], 0);
+        e.move_cursors(&set, Motion::Left).expect("in the set");
+        assert_eq!(e.selections().as_slice(), [Selection::cursor(1)]);
+        let (set, mut e) = editor("a\r\nb", vec![Selection::new(0, 2)], 0);
+        e.move_cursors(&set, Motion::Right).expect("in the set");
+        assert_eq!(e.selections().as_slice(), [Selection::cursor(3)]);
+        let (set, mut e) = editor("a\r\nb", vec![Selection::new(4, 2)], 0);
+        e.move_cursors(&set, Motion::Left).expect("in the set");
+        assert_eq!(e.selections().as_slice(), [Selection::cursor(1)]);
+    }
+
+    /// Each selection moved on its own editor, as the goal rules define.
+    fn alone(text: &str, selections: &[Selection], steps: &[Motion]) -> Vec<Selection> {
+        selections
+            .iter()
+            .map(|&selection| {
+                let (set, mut e) = editor(text, vec![selection], 0);
+                for &motion in steps {
+                    e.extend_selections(&set, motion).expect("in the set");
+                }
+                e.selections().primary()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn touching_selections_keep_their_own_goals() {
+        // Shift+Down leaves 0..9 and 9..19 touching but apart; Shift+Up
+        // must take each back by its own goal (columns 2 and 5).
+        let text = "abcdef\n".repeat(4);
+        let steps = [Motion::Down, Motion::Up];
+        for selections in [
+            vec![Selection::new(0, 2), Selection::new(9, 12)],
+            vec![Selection::new(2, 0), Selection::new(9, 12)],
+            vec![Selection::new(0, 2), Selection::new(12, 9)],
+        ] {
+            for primary in 0..2 {
+                let (set, mut e) = editor(&text, selections.clone(), primary);
+                for i in 0..steps.len() {
+                    e.extend_selections(&set, steps[i]).expect("in the set");
+                    let expected = alone(&text, &selections, &steps[..=i]);
+                    assert_eq!(e.selections().as_slice(), expected, "{selections:?} {i}");
+                    assert_eq!(e.selections().primary_index(), primary);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn merged_selections_keep_a_goal_of_their_own() {
+        // Lines start at 0, 7 ("ab"), 10, 17 and 24 (empty).
+        let text = "abcdef\nab\nabcdef\nabcdef\n";
+        // Cursors at columns 4 and 5 both land at the end of "ab" and
+        // merge there. Whichever goal the merged cursor keeps, 4 or 5, the
+        // next Down takes it to that column, never to the third cursor's.
+        for primary in 0..3 {
+            let selections = vec![
+                Selection::cursor(4),
+                Selection::cursor(5),
+                Selection::cursor(18),
+            ];
+            let (set, mut e) = editor(text, selections, primary);
+            e.move_cursors(&set, Motion::Down).expect("in the set");
+            assert_eq!(
+                e.selections().as_slice(),
+                [Selection::cursor(9), Selection::cursor(24)]
+            );
+            assert_eq!(e.selections().primary_index(), primary.saturating_sub(1));
+            e.move_cursors(&set, Motion::Up).expect("in the set");
+            let merged = e.selections().as_slice()[0].head;
+            assert!(merged == 4 || merged == 5, "{merged}");
+            // The third cursor went to the empty last line and keeps its
+            // own goal, column 1.
+            assert_eq!(e.selections().as_slice()[1], Selection::cursor(18));
+        }
+    }
 }
