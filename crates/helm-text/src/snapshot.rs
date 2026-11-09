@@ -139,6 +139,10 @@ impl fmt::Display for Snapshot {
 }
 
 impl TextBuffer for Snapshot {
+    fn chunk_at(&self, byte: usize) -> Result<(&str, usize), TextError> {
+        self.buffer.chunk_at(byte)
+    }
+
     fn len_bytes(&self) -> usize {
         self.buffer.len_bytes()
     }

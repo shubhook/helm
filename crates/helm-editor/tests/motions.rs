@@ -170,7 +170,6 @@ fn table(f: fn(Motion, &str) -> String, motion: Motion, cases: &[(&str, &str)]) 
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn the_markers_round_trip() {
     // Checks the helpers, and calls into the implementation once so the
     // test runs against it.
@@ -185,7 +184,6 @@ fn the_markers_round_trip() {
 // Left and Right.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn left_and_right_move_one_character() {
     table(
         moved,
@@ -216,7 +214,6 @@ fn left_and_right_move_one_character() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn a_head_inside_a_crlf_moves_out_of_it() {
     // A stale cursor between the CR and the LF.
     assert_eq!(moved(Motion::Left, "a\r|\nb"), "a|\r\nb");
@@ -224,7 +221,6 @@ fn a_head_inside_a_crlf_moves_out_of_it() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn moving_left_or_right_collapses_a_selection_to_its_side() {
     table(
         moved,
@@ -239,7 +235,6 @@ fn moving_left_or_right_collapses_a_selection_to_its_side() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn other_motions_move_a_selection_from_its_head() {
     assert_eq!(moved(Motion::WordRight, "^ab| cd"), "ab cd|");
     assert_eq!(moved(Motion::LineEnd, "a|b^c\nd"), "abc|\nd");
@@ -247,7 +242,6 @@ fn other_motions_move_a_selection_from_its_head() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn extending_moves_only_the_head() {
     table(
         extended,
@@ -266,14 +260,12 @@ fn extending_moves_only_the_head() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn a_head_that_reaches_its_anchor_leaves_a_cursor() {
     assert_eq!(extended(Motion::Left, "a^b|c"), "a|bc");
     assert_eq!(extended(Motion::Right, "a|b^c"), "ab|c");
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn moving_reports_whether_anything_changed() {
     let mut s = Session::new("|abc");
     assert!(!s.move_by(Motion::Left));
@@ -290,7 +282,6 @@ fn moving_reports_whether_anything_changed() {
 // Up and Down.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn up_and_down_keep_the_column() {
     table(
         moved,
@@ -313,7 +304,6 @@ fn up_and_down_keep_the_column() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn up_on_the_first_line_and_down_on_the_last_go_to_the_ends() {
     assert_eq!(moved(Motion::Up, "ab|c\ndef"), "|abc\ndef");
     assert_eq!(moved(Motion::Down, "abc\nd|ef"), "abc\ndef|");
@@ -322,7 +312,6 @@ fn up_on_the_first_line_and_down_on_the_last_go_to_the_ends() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn the_column_is_capped_before_the_line_break() {
     assert_eq!(moved(Motion::Down, "abcd|\nab\nx"), "abcd\nab|\nx");
     assert_eq!(moved(Motion::Down, "abcd|\r\nab\r\nx"), "abcd\r\nab|\r\nx");
@@ -330,14 +319,12 @@ fn the_column_is_capped_before_the_line_break() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn columns_count_chars_not_bytes() {
     assert_eq!(moved(Motion::Down, "中文字|\nabcdef"), "中文字\nabc|def");
     assert_eq!(moved(Motion::Up, "é😀ab\nab|c"), "é😀|ab\nabc");
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn the_goal_column_survives_a_short_line() {
     let mut s = Session::new("abcde|f\nab\nabcdef");
     s.move_by(Motion::Down);
@@ -351,7 +338,6 @@ fn the_goal_column_survives_a_short_line() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn the_goal_column_survives_the_first_and_last_lines() {
     let mut s = Session::new("ab|c\nabc");
     s.move_by(Motion::Up);
@@ -365,7 +351,6 @@ fn the_goal_column_survives_the_first_and_last_lines() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn extending_up_and_down_shares_the_goal_with_moving() {
     let mut s = Session::new("abcde|f\nab\nabcdef");
     s.extend_by(Motion::Down);
@@ -379,7 +364,6 @@ fn extending_up_and_down_shares_the_goal_with_moving() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn any_other_motion_drops_the_goal() {
     let mut s = Session::new("abcde|f\nab\nabcdef");
     s.move_by(Motion::Down);
@@ -396,7 +380,6 @@ fn any_other_motion_drops_the_goal() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn editing_and_set_selections_drop_the_goal() {
     let mut s = Session::new("abcde|f\nab\nabcdef");
     s.move_by(Motion::Down);
@@ -416,7 +399,6 @@ fn editing_and_set_selections_drop_the_goal() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn undo_drops_the_goal() {
     let mut s = Session::new("abcde|f\nab\nabcdef");
     s.editor
@@ -432,7 +414,6 @@ fn undo_drops_the_goal() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn each_cursor_keeps_its_own_goal() {
     let mut s = Session::new("a|bcde|f\nab\nabcdef");
     s.move_by(Motion::Down);
@@ -442,7 +423,6 @@ fn each_cursor_keeps_its_own_goal() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn cursors_that_meet_merge_and_keep_the_primary() {
     let mut s = Session::with_primary("a|b|c\nx", 1);
     assert!(s.move_by(Motion::Up));
@@ -461,7 +441,6 @@ fn cursors_that_meet_merge_and_keep_the_primary() {
 // Words.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn word_right_stops_at_the_end_of_each_run() {
     table(
         moved,
@@ -488,7 +467,6 @@ fn word_right_stops_at_the_end_of_each_run() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn word_left_stops_at_the_start_of_each_run() {
     table(
         moved,
@@ -513,7 +491,6 @@ fn word_left_stops_at_the_start_of_each_run() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn extending_by_words_selects_them() {
     assert_eq!(extended(Motion::WordRight, "|foo bar"), "^foo| bar");
     assert_eq!(extended(Motion::WordLeft, "foo bar|"), "foo |bar^");
@@ -526,7 +503,6 @@ fn extending_by_words_selects_them() {
 // Lines and the whole text.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn line_start_goes_to_the_first_non_blank_then_the_line_start() {
     let mut s = Session::new("x\n  foo|bar");
     s.move_by(Motion::LineStart);
@@ -551,7 +527,6 @@ fn line_start_goes_to_the_first_non_blank_then_the_line_start() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn line_end_goes_before_the_line_break() {
     table(
         moved,
@@ -567,7 +542,6 @@ fn line_end_goes_before_the_line_break() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn text_start_and_end() {
     assert_eq!(moved(Motion::TextStart, "ab\nc|d"), "|ab\ncd");
     assert_eq!(moved(Motion::TextEnd, "a|b\nc|d"), "ab\ncd|");
@@ -579,7 +553,6 @@ fn text_start_and_end() {
 // Deleting by a motion.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn delete_to_deletes_from_each_cursor_to_where_the_motion_goes() {
     table(
         deleted,
@@ -621,14 +594,12 @@ fn delete_to_deletes_from_each_cursor_to_where_the_motion_goes() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn delete_to_deletes_a_selection_instead() {
     assert_eq!(deleted(Motion::WordLeft, "a^bc|d"), "a|d");
     assert_eq!(deleted(Motion::LineEnd, "a|bc^d"), "a|d");
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn delete_to_with_nothing_to_delete_applies_nothing() {
     let mut s = Session::new("|abc");
     assert!(!s.delete_to(Motion::WordLeft));
@@ -638,7 +609,6 @@ fn delete_to_with_nothing_to_delete_applies_nothing() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn delete_to_at_every_cursor_is_one_undo_step() {
     let mut s = Session::new("foo bar|\nbaz qux|");
     assert!(s.delete_to(Motion::WordLeft));
@@ -650,14 +620,12 @@ fn delete_to_at_every_cursor_is_one_undo_step() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn delete_to_joins_overlapping_ranges() {
     assert_eq!(deleted(Motion::WordLeft, "ab|c|"), "|");
     assert_eq!(deleted(Motion::LineStart, "x\nab|c|d"), "x\n|d");
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn delete_to_keeps_cursors_that_delete_nothing() {
     assert_eq!(deleted(Motion::WordLeft, "|ab cd|"), "|ab |");
     assert_eq!(deleted(Motion::LineEnd, "ab|\ncd|\nef|gh"), "ab|\ncd|\nef|");
@@ -666,7 +634,6 @@ fn delete_to_keeps_cursors_that_delete_nothing() {
 // Selecting all and collapsing.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn select_all_selects_the_whole_text() {
     let mut s = Session::new("a|b\nc|d");
     assert!(s.editor.select_all(&s.set).expect("buffer is in the set"));
@@ -680,7 +647,6 @@ fn select_all_selects_the_whole_text() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn collapse_keeps_the_primary_then_makes_it_a_cursor() {
     let mut s = Session::with_primary("a|b^c|d^e|", 1);
     assert!(
@@ -716,7 +682,6 @@ fn collapse_keeps_the_primary_then_makes_it_a_cursor() {
 // Clamping and errors.
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn stale_selections_are_clamped_first() {
     let mut s = Session::new("|abc");
     s.editor
@@ -733,7 +698,6 @@ fn stale_selections_are_clamped_first() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn an_unknown_buffer_is_an_error_and_changes_nothing() {
     let set = BufferSet::new();
     let mut other = BufferSet::new();

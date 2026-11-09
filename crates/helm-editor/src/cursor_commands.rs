@@ -14,12 +14,7 @@
 //! [`Editor::delete_to`]: crate::Editor::delete_to
 //! [`Motion`]: crate::Motion
 
-#![expect(
-    dead_code,
-    reason = "T-107 interface stubs; the implementation deletes this"
-)]
-
-use crate::CommandRegistry;
+use crate::{Command, CommandFn, CommandId, CommandRegistry, Motion};
 
 /// `move_cursors(Motion::Left)`.
 pub const LEFT: &str = "cursor.left";
@@ -110,6 +105,125 @@ pub const ALL: [&str; 26] = [
 /// Registers one command for each id in [`ALL`], each with a non-empty
 /// title.
 pub(crate) fn register_all(registry: &mut CommandRegistry) {
-    let _ = registry;
-    todo!()
+    // Function pointers can't capture a motion, so each entry names its
+    // own.
+    macro_rules! motion {
+        ($method:ident, $motion:ident) => {
+            |cx| {
+                cx.editor.$method(cx.set, Motion::$motion)?;
+                Ok(())
+            }
+        };
+    }
+    let commands: [(&str, &'static str, CommandFn); 26] = [
+        (LEFT, "Cursor left", motion!(move_cursors, Left)),
+        (RIGHT, "Cursor right", motion!(move_cursors, Right)),
+        (UP, "Cursor up", motion!(move_cursors, Up)),
+        (DOWN, "Cursor down", motion!(move_cursors, Down)),
+        (
+            WORD_LEFT,
+            "Cursor word left",
+            motion!(move_cursors, WordLeft),
+        ),
+        (
+            WORD_RIGHT,
+            "Cursor word right",
+            motion!(move_cursors, WordRight),
+        ),
+        (
+            LINE_START,
+            "Cursor to line start",
+            motion!(move_cursors, LineStart),
+        ),
+        (
+            LINE_END,
+            "Cursor to line end",
+            motion!(move_cursors, LineEnd),
+        ),
+        (
+            TEXT_START,
+            "Cursor to text start",
+            motion!(move_cursors, TextStart),
+        ),
+        (
+            TEXT_END,
+            "Cursor to text end",
+            motion!(move_cursors, TextEnd),
+        ),
+        (SELECT_LEFT, "Select left", motion!(extend_selections, Left)),
+        (
+            SELECT_RIGHT,
+            "Select right",
+            motion!(extend_selections, Right),
+        ),
+        (SELECT_UP, "Select up", motion!(extend_selections, Up)),
+        (SELECT_DOWN, "Select down", motion!(extend_selections, Down)),
+        (
+            SELECT_WORD_LEFT,
+            "Select word left",
+            motion!(extend_selections, WordLeft),
+        ),
+        (
+            SELECT_WORD_RIGHT,
+            "Select word right",
+            motion!(extend_selections, WordRight),
+        ),
+        (
+            SELECT_LINE_START,
+            "Select to line start",
+            motion!(extend_selections, LineStart),
+        ),
+        (
+            SELECT_LINE_END,
+            "Select to line end",
+            motion!(extend_selections, LineEnd),
+        ),
+        (
+            SELECT_TEXT_START,
+            "Select to text start",
+            motion!(extend_selections, TextStart),
+        ),
+        (
+            SELECT_TEXT_END,
+            "Select to text end",
+            motion!(extend_selections, TextEnd),
+        ),
+        (SELECT_ALL, "Select all", |cx| {
+            cx.editor.select_all(cx.set)?;
+            Ok(())
+        }),
+        (COLLAPSE, "Collapse selections", |cx| {
+            cx.editor.collapse_selections(cx.set)?;
+            Ok(())
+        }),
+        (
+            DELETE_WORD_LEFT,
+            "Delete word left",
+            motion!(delete_to, WordLeft),
+        ),
+        (
+            DELETE_WORD_RIGHT,
+            "Delete word right",
+            motion!(delete_to, WordRight),
+        ),
+        (
+            DELETE_LINE_START,
+            "Delete to line start",
+            motion!(delete_to, LineStart),
+        ),
+        (
+            DELETE_LINE_END,
+            "Delete to line end",
+            motion!(delete_to, LineEnd),
+        ),
+    ];
+    for (id, title, run) in commands {
+        registry
+            .register(Command {
+                id: CommandId::from(id),
+                title,
+                run,
+            })
+            .expect("cursor command ids are valid and distinct");
+    }
 }

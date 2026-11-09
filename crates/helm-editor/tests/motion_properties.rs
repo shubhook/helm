@@ -98,7 +98,6 @@ proptest! {
     /// From any position, every motion lands on a char boundary that isn't
     /// inside a CRLF, within the text.
     #[test]
-    #[ignore = "T-107: not implemented yet"]
     fn every_motion_lands_on_a_valid_position(
         text in text(24),
         at in any::<Index>(),
@@ -114,7 +113,6 @@ proptest! {
     /// Left then Right, and Right then Left, come back to where they
     /// started, away from the ends of the text.
     #[test]
-    #[ignore = "T-107: not implemented yet"]
     fn left_and_right_undo_each_other(text in text(24), at in any::<Index>()) {
         let at = *at.get(&positions(&text));
         if at < text.len() {
@@ -132,7 +130,6 @@ proptest! {
     /// Word motions always move, until the end they head for, so pressing
     /// one repeatedly crosses the whole text.
     #[test]
-    #[ignore = "T-107: not implemented yet"]
     fn word_motions_always_make_progress(text in text(24)) {
         let mut at = 0;
         let mut steps = 0;
@@ -153,7 +150,6 @@ proptest! {
     /// Moving many cursors at once gives what moving each alone gives, put
     /// in normal form, with the primary the one the old primary became.
     #[test]
-    #[ignore = "T-107: not implemented yet"]
     fn many_cursors_move_as_each_would_alone(
         text in text(24),
         picks in prop::collection::vec(any::<Index>(), 1..=12),
@@ -183,7 +179,6 @@ proptest! {
     /// Extending a cursor puts its head where moving it would, and keeps
     /// its anchor.
     #[test]
-    #[ignore = "T-107: not implemented yet"]
     fn extending_keeps_the_anchor(
         text in text(24),
         at in any::<Index>(),
@@ -200,7 +195,6 @@ proptest! {
     /// cursor and where the motion takes it, leaves the cursor at the
     /// start of that range, and one undo restores the text.
     #[test]
-    #[ignore = "T-107: not implemented yet"]
     fn delete_to_matches_a_string_oracle(
         text in text(24),
         at in any::<Index>(),
