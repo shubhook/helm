@@ -433,9 +433,10 @@ impl Drop for Forward<'_> {
 
 /// Reads chars backward from an offset, a window of text at a time,
 /// through `window`. Each window is copied from the stored chunk that holds
-/// the byte before the reader, and stops at the chunk's start. Windows it
-/// reads join onto the front of what the window holds, so Up can look
-/// forward through the line it scanned back over.
+/// the byte before the reader, and stops at the chunk's start. A reader
+/// with a budget (Up and Down) joins each window onto the front of what it
+/// read before, so Up can look forward through the line it scanned back
+/// over. A reader without one keeps only its latest window.
 struct Backward<'a> {
     buffer: &'a Buffer,
     /// Where `window` goes back when the reader is done.
@@ -453,6 +454,11 @@ struct Backward<'a> {
     cut: bool,
     /// The starting offset wasn't a char boundary.
     invalid: bool,
+    /// Whether a new window joins onto the front of the text already read.
+    /// Only a reader with a budget joins, so it copies at most its budget
+    /// again per window. A reader without one replaces its window and
+    /// copies each byte once, however far it scans.
+    join: bool,
 }
 
 impl<'a> Backward<'a> {
@@ -480,6 +486,7 @@ impl<'a> Backward<'a> {
             limit: offset.saturating_sub(budget),
             cut: false,
             invalid,
+            join: budget != usize::MAX,
         }
     }
 
@@ -540,7 +547,7 @@ impl<'a> Backward<'a> {
         }
         let start = chunk_start + i;
         let text = chunk[i..j].to_owned();
-        if self.window.start == end && !self.window.text.is_empty() {
+        if self.join && self.window.start == end && !self.window.text.is_empty() {
             // Join onto what the reader read before.
             self.window.text.insert_str(0, &text);
             self.window.start = start;
@@ -599,7 +606,7 @@ impl<'a> Backward<'a> {
     }
 
     /// The text from the reader to `end`, which must be inside what the
-    /// reader has read.
+    /// reader has read. Only a reader with a budget keeps all of that.
     fn text_to(&self, end: usize) -> &str {
         &self.window.text[self.at - self.window.start..end - self.window.start]
     }
@@ -983,5 +990,57 @@ mod tests {
         let mut reader = Backward::bounded(&buffer, &mut window, text.len(), 3, 7);
         reader.skip_line();
         assert!(reader.valid() && reader.cut);
+    }
+
+    #[test]
+    fn a_long_backward_scan_keeps_one_window() {
+        // A reader without a budget replaces its window on each read, so
+        // what it holds stays one chunk or less however far it scans. Before,
+        // it joined every chunk onto the front, moving all it held each time.
+        for n in [10_000, 100_000, 400_000] {
+            let text = "a".repeat(n);
+            let buffer = Buffer::from(text.as_str());
+            let mut reads = Reads::default();
+            assert_eq!(word_left(&buffer, &mut reads, n), Some(0));
+            let held = reads.backward.text.len();
+            assert!(held > 0 && held <= 4096, "{n}: holds {held} bytes");
+            assert_eq!(reads.backward.start, 0);
+            assert_eq!(&text[..held], reads.backward.text);
+        }
+    }
+
+    #[test]
+    fn up_keeps_only_what_its_budget_allows() {
+        // Up joins its windows to look forward through the line above, but
+        // never past its budget, so a long line costs a bounded copy and
+        // then the line index.
+        let line = "é中a😀 ".repeat(20_000);
+        let text = format!("{line}\n{line}");
+        let buffer = Buffer::from(text.as_str());
+        let mut reads = Reads::default();
+        let end = text.len();
+        let expected = vertical_by_lines(&buffer, &mut Reads::default(), end, false, None);
+        assert_eq!(
+            try_target(&buffer, end, Motion::Up, None, &mut reads),
+            expected
+        );
+        assert!(
+            reads.backward.text.len() <= SCAN_LIMIT + 8,
+            "{}",
+            reads.backward.text.len()
+        );
+        // A short line above fits in what Up joined, across chunk edges.
+        let short = format!("{}\n{}", "xy".repeat(150), "z".repeat(5));
+        let buffer = Buffer::from(short.as_str());
+        assert_eq!(
+            try_target(
+                &buffer,
+                short.len(),
+                Motion::Up,
+                None,
+                &mut Reads::default()
+            ),
+            Some((5, 5))
+        );
     }
 }
