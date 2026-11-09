@@ -194,4 +194,27 @@ pub trait TextBuffer {
     /// [`TextError::InsideSurrogatePair`] for a column between the two
     /// halves of a surrogate pair.
     fn utf16_point_to_byte(&self, point: Utf16Point) -> Result<usize, TextError>;
+
+    /// One of the chunks the text is stored in, borrowed, and the byte
+    /// offset where it starts: the chunk that holds the byte at `byte`.
+    ///
+    /// Readers that scan the text near an offset use this instead of
+    /// [`slice`](Self::slice), which copies.
+    ///
+    /// - For `byte < len_bytes()`, the chunk holds that byte:
+    ///   `start <= byte < start + chunk.len()`, so the chunk isn't empty.
+    ///   An offset where one chunk ends and the next starts gives the next.
+    /// - For `byte == len_bytes()`, the chunk ends there:
+    ///   `start + chunk.len() == byte`. An empty text gives `("", 0)`.
+    /// - `byte` may fall inside a char. The chunk still holds that char,
+    ///   and callers can test the offset with `str::is_char_boundary` on
+    ///   the chunk.
+    ///
+    /// Every chunk starts and ends on a char boundary. Starting at offset 0
+    /// and asking next for `start + chunk.len()` visits every chunk once, in
+    /// order, with no gaps or overlaps, and the chunks joined are the text.
+    /// How large a chunk is isn't specified; it changes with edits.
+    ///
+    /// Errors with [`TextError::ByteOutOfBounds`] if `byte` is past the end.
+    fn chunk_at(&self, byte: usize) -> Result<(&str, usize), TextError>;
 }

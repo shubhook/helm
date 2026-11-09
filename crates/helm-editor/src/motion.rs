@@ -7,7 +7,7 @@
 //! [`Editor::extend_selections`]: crate::Editor::extend_selections
 //! [`Editor::delete_to`]: crate::Editor::delete_to
 
-use helm_text::{Buffer, TextBuffer, TextError};
+use helm_text::{Buffer, TextBuffer};
 
 use crate::editor::is_word;
 
@@ -255,7 +255,9 @@ impl Window {
 }
 
 /// Reads chars forward from an offset, a window of text at a time, through
-/// `window`.
+/// `window`. Each window is copied from one of the buffer's stored chunks,
+/// found with [`TextBuffer::chunk_at`], and stops at the chunk's end; the
+/// next window starts in the next chunk.
 struct Forward<'a> {
     buffer: &'a Buffer,
     /// Where `window` goes back when the reader is done.
@@ -341,23 +343,25 @@ impl<'a> Forward<'a> {
             self.cut = true;
             return false;
         }
-        // At least four bytes, so stepping back always finds a boundary.
+        // At least four bytes, so the window holds at least one char.
         let size = self.size.min(self.limit - start).max(4);
-        let mut end = start.saturating_add(size).min(len);
-        let text = loop {
-            match self.buffer.slice(start..end) {
-                Ok(text) => break text,
-                // `start` is a boundary and a char is at most four bytes,
-                // so stepping back finds one past `start`.
-                Err(TextError::NotCharBoundary { offset }) if offset == end && end > start + 1 => {
-                    end -= 1;
-                }
-                Err(_) => {
-                    self.invalid = true;
-                    return false;
-                }
-            }
+        // `start < len`, so this chunk holds the byte at `start`.
+        let Ok((chunk, chunk_start)) = self.buffer.chunk_at(start) else {
+            self.invalid = true;
+            return false;
         };
+        let i = start - chunk_start;
+        if !chunk.is_char_boundary(i) {
+            self.invalid = true;
+            return false;
+        }
+        // Up to `size` bytes, within the chunk, back to a char boundary.
+        // Chunks end on boundaries, so this stops past `i`.
+        let mut j = i.saturating_add(size).min(chunk.len());
+        while !chunk.is_char_boundary(j) {
+            j -= 1;
+        }
+        let text = chunk[i..j].to_owned();
         self.window = Window { start, text };
         self.size = self.size.saturating_mul(2);
         true
@@ -428,9 +432,10 @@ impl Drop for Forward<'_> {
 }
 
 /// Reads chars backward from an offset, a window of text at a time,
-/// through `window`. Windows it reads join onto the front of what the
-/// window holds, so Up can look forward through the line it scanned back
-/// over.
+/// through `window`. Each window is copied from the stored chunk that holds
+/// the byte before the reader, and stops at the chunk's start. Windows it
+/// reads join onto the front of what the window holds, so Up can look
+/// forward through the line it scanned back over.
 struct Backward<'a> {
     buffer: &'a Buffer,
     /// Where `window` goes back when the reader is done.
@@ -515,22 +520,26 @@ impl<'a> Backward<'a> {
             self.cut = true;
             return false;
         }
-        // At least four bytes, so stepping back always finds a boundary.
+        // At least four bytes, so the window holds at least one char.
         let size = self.size.min(end - self.limit).max(4);
-        let mut start = end.saturating_sub(size);
-        let text = loop {
-            match self.buffer.slice(start..end) {
-                Ok(text) => break text,
-                // 0 is a boundary, so stepping back finds one.
-                Err(TextError::NotCharBoundary { offset }) if offset == start && start > 0 => {
-                    start -= 1;
-                }
-                Err(_) => {
-                    self.invalid = true;
-                    return false;
-                }
-            }
+        // The chunk that holds the byte just before `end`.
+        let Ok((chunk, chunk_start)) = self.buffer.chunk_at(end - 1) else {
+            self.invalid = true;
+            return false;
         };
+        let j = end - chunk_start;
+        if !chunk.is_char_boundary(j) {
+            self.invalid = true;
+            return false;
+        }
+        // Up to `size` bytes, within the chunk, back to a char boundary.
+        // Chunks start on boundaries, so this stops at 0 at the latest.
+        let mut i = j.saturating_sub(size);
+        while !chunk.is_char_boundary(i) {
+            i -= 1;
+        }
+        let start = chunk_start + i;
+        let text = chunk[i..j].to_owned();
         if self.window.start == end && !self.window.text.is_empty() {
             // Join onto what the reader read before.
             self.window.text.insert_str(0, &text);

@@ -147,6 +147,18 @@ impl fmt::Display for Buffer {
 }
 
 impl TextBuffer for Buffer {
+    fn chunk_at(&self, byte: usize) -> Result<(&str, usize), TextError> {
+        let len = self.rope.len_bytes();
+        if byte > len {
+            return Err(TextError::ByteOutOfBounds { offset: byte, len });
+        }
+        // ropey picks the child whose range ends after `byte`, so a byte
+        // where two chunks meet belongs to the second, and the end of the
+        // text to the last chunk.
+        let (chunk, start, _, _) = self.rope.chunk_at_byte(byte);
+        Ok((chunk, start))
+    }
+
     fn len_bytes(&self) -> usize {
         self.rope.len_bytes()
     }
