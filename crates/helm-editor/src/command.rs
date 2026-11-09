@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use helm_text::BufferSet;
 
-use crate::{Editor, EditorError, editor_commands};
+use crate::{Editor, EditorError, cursor_commands, editor_commands};
 
 /// A command's id, such as `"editor.delete_backward"`. Keymaps, the
 /// keybindings file and the command palette name commands by id, so an id
@@ -160,7 +160,9 @@ impl CommandRegistry {
     /// [`vscode`](crate::vscode) keymap binds. This is the registry
     /// `helm-ui` builds its dispatcher with.
     pub fn with_all_commands() -> Self {
-        todo!()
+        let mut registry = Self::with_editor_commands();
+        cursor_commands::register_all(&mut registry);
+        registry
     }
 
     /// Adds `command`. Errors, and adds nothing, if its id isn't in the

@@ -8,6 +8,7 @@ use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
 };
 
+use crate::motion::{column, target};
 use crate::{EditorError, Motion, Selection, Selections};
 
 /// The selections on one buffer of a [`BufferSet`], and the commands that
@@ -107,6 +108,9 @@ pub struct Editor {
     /// editor applies drops, so their records go then too. That keeps
     /// `history` from growing with every undo and retype.
     undone: Vec<TransactionId>,
+    /// Each selection's goal column, in chars, by index into `selections`,
+    /// or empty when there are none. Only Up and Down set and keep them.
+    goals: Vec<usize>,
 }
 
 /// The selections just before and just after one transaction.
@@ -137,6 +141,7 @@ impl Editor {
             selections: Selections::single(Selection::cursor(0)),
             history: HashMap::new(),
             undone: Vec::new(),
+            goals: Vec::new(),
         }
     }
 
@@ -158,6 +163,7 @@ impl Editor {
     /// Replaces the selections. They are not checked against the buffer
     /// here; the next command clamps them.
     pub fn set_selections(&mut self, selections: Selections) {
+        self.goals.clear();
         self.selections = selections;
     }
 
@@ -197,7 +203,9 @@ impl Editor {
         &mut self,
         set: &mut BufferSet,
     ) -> Result<Option<TransactionId>, EditorError> {
-        self.delete_each(set, Direction::Backward)
+        self.delete_each(set, |buffer, selection| {
+            delete_range(buffer, selection, Direction::Backward)
+        })
     }
 
     /// Delete at every selection. Like
@@ -208,7 +216,9 @@ impl Editor {
         &mut self,
         set: &mut BufferSet,
     ) -> Result<Option<TransactionId>, EditorError> {
-        self.delete_each(set, Direction::Forward)
+        self.delete_each(set, |buffer, selection| {
+            delete_range(buffer, selection, Direction::Forward)
+        })
     }
 
     /// Adds a selection on the next match of the primary's text (ED-3, "add
@@ -226,6 +236,7 @@ impl Editor {
     /// selection, nothing changes.
     pub fn add_next_match(&mut self, set: &BufferSet) -> Result<bool, EditorError> {
         let buffer = self.buffer_in(set)?;
+        self.goals.clear();
         let old = self.selections.clone();
         let clamped = clamp(buffer, &self.selections);
         let text = buffer.to_string();
@@ -270,6 +281,7 @@ impl Editor {
     /// range searched for: the old primary, or the word around it.
     pub fn select_all_matches(&mut self, set: &BufferSet) -> Result<bool, EditorError> {
         let buffer = self.buffer_in(set)?;
+        self.goals.clear();
         let old = self.selections.clone();
         let clamped = clamp(buffer, &self.selections);
         let text = buffer.to_string();
@@ -329,6 +341,7 @@ impl Editor {
     /// blocked, and then nothing changes.
     pub fn undo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.undo(self.buffer)?;
+        self.goals.clear();
         if let Some(record) = id.and_then(|id| self.history.get(&id)) {
             self.selections = record.before.clone();
             self.undone.push(record.id);
@@ -344,6 +357,7 @@ impl Editor {
     /// Errors the same way as [`undo`](Self::undo).
     pub fn redo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.redo(self.buffer)?;
+        self.goals.clear();
         if let Some(record) = id.and_then(|id| self.history.get(&id)) {
             self.selections = record.after.clone();
             self.undone.retain(|&undone| undone != record.id);
@@ -363,12 +377,8 @@ impl Editor {
     /// The selections are clamped first and put back in normal form after,
     /// so cursors that land on one offset merge. The primary is the
     /// selection the old primary became.
-    #[expect(
-        unused_variables,
-        reason = "T-107 interface stub; the implementation deletes this"
-    )]
     pub fn move_cursors(&mut self, set: &BufferSet, motion: Motion) -> Result<bool, EditorError> {
-        todo!()
+        self.move_heads(set, motion, false)
     }
 
     /// Extends every selection by `motion` (T-107): each head moves where
@@ -380,16 +390,12 @@ impl Editor {
     /// any other. A head that moves back onto its anchor leaves a cursor.
     /// Clamping, normal form, the primary and goal columns work as in
     /// `move_cursors`.
-    #[expect(
-        unused_variables,
-        reason = "T-107 interface stub; the implementation deletes this"
-    )]
     pub fn extend_selections(
         &mut self,
         set: &BufferSet,
         motion: Motion,
     ) -> Result<bool, EditorError> {
-        todo!()
+        self.move_heads(set, motion, true)
     }
 
     /// Deletes from every cursor to where `motion` takes it (T-107), in one
@@ -404,40 +410,51 @@ impl Editor {
     /// were, moved by the edits before them, and with nothing to delete it
     /// applies no transaction and returns `Ok(None)`. Undo and redo put
     /// the selections back as for any editing command.
-    #[expect(
-        unused_variables,
-        reason = "T-107 interface stub; the implementation deletes this"
-    )]
     pub fn delete_to(
         &mut self,
         set: &mut BufferSet,
         motion: Motion,
     ) -> Result<Option<TransactionId>, EditorError> {
-        todo!()
+        self.delete_each(set, |buffer, selection| {
+            if !selection.is_empty() {
+                return Some(selection.range());
+            }
+            let head = selection.head;
+            let to = target(buffer, head, motion, None);
+            (to != head).then(|| head.min(to)..head.max(to))
+        })
     }
 
     /// Replaces the selections with one selection of the whole text,
     /// pointing forward from offset 0, as the primary (T-107). Returns
     /// whether the selections changed. In an empty text that is a cursor
     /// at 0.
-    #[expect(
-        unused_variables,
-        reason = "T-107 interface stub; the implementation deletes this"
-    )]
     pub fn select_all(&mut self, set: &BufferSet) -> Result<bool, EditorError> {
-        todo!()
+        let buffer = self.buffer_in(set)?;
+        self.goals.clear();
+        let old = std::mem::replace(
+            &mut self.selections,
+            Selections::single(Selection::new(0, buffer.len_bytes())),
+        );
+        Ok(self.selections != old)
     }
 
     /// VS Code's Escape (T-107). With more than one selection, keeps only
     /// the primary, as it is. With one selection, makes it a cursor at its
     /// head. Returns whether the selections changed. The selections are
     /// clamped first.
-    #[expect(
-        unused_variables,
-        reason = "T-107 interface stub; the implementation deletes this"
-    )]
     pub fn collapse_selections(&mut self, set: &BufferSet) -> Result<bool, EditorError> {
-        todo!()
+        let buffer = self.buffer_in(set)?;
+        self.goals.clear();
+        let clamped = clamp(buffer, &self.selections);
+        let primary = clamped.primary();
+        let collapsed = if clamped.as_slice().len() > 1 {
+            primary
+        } else {
+            Selection::cursor(primary.head)
+        };
+        let old = std::mem::replace(&mut self.selections, Selections::single(collapsed));
+        Ok(self.selections != old)
     }
 }
 
@@ -456,6 +473,7 @@ impl Editor {
         text: &str,
     ) -> Result<Option<TransactionId>, EditorError> {
         let before = clamp(self.buffer_in(set)?, &self.selections);
+        self.goals.clear();
         self.selections = before.clone();
         if text.is_empty() && before.as_slice().iter().all(Selection::is_empty) {
             return Ok(None);
@@ -478,21 +496,22 @@ impl Editor {
         Ok(Some(self.apply(set, transaction, before, after)))
     }
 
-    /// Deletes at every selection in one transaction, before or after each
-    /// cursor.
+    /// Deletes the range `range_of` gives each selection, in one
+    /// transaction. `None` deletes nothing at that selection.
     fn delete_each(
         &mut self,
         set: &mut BufferSet,
-        direction: Direction,
+        range_of: impl Fn(&Buffer, Selection) -> Option<Range<usize>>,
     ) -> Result<Option<TransactionId>, EditorError> {
         let buffer = self.buffer_in(set)?;
+        self.goals.clear();
         let before = clamp(buffer, &self.selections);
         self.selections = before.clone();
 
         let ranges: Vec<Option<Range<usize>>> = before
             .as_slice()
             .iter()
-            .map(|&selection| delete_range(buffer, selection, direction))
+            .map(|&selection| range_of(buffer, selection))
             .collect();
         let mut sorted: Vec<Range<usize>> = ranges.iter().flatten().cloned().collect();
         if sorted.is_empty() {
@@ -554,9 +573,84 @@ impl Editor {
         id
     }
 
+    /// Moves every selection's head by `motion`: to a cursor there, or with
+    /// the anchor kept when `extend` is set. Up and Down use and keep the
+    /// goal columns; every other motion drops them.
+    fn move_heads(
+        &mut self,
+        set: &BufferSet,
+        motion: Motion,
+        extend: bool,
+    ) -> Result<bool, EditorError> {
+        let buffer = self.buffer_in(set)?;
+        let old = self.selections.clone();
+        let clamped = clamp(buffer, &self.selections);
+        let vertical = matches!(motion, Motion::Up | Motion::Down);
+        // Clamping keeps the order, so the goals still line up unless it
+        // merged selections. Then the merged ones start over from their
+        // columns.
+        let goals = std::mem::take(&mut self.goals);
+        let goals = if vertical && goals.len() == clamped.as_slice().len() {
+            goals
+        } else {
+            Vec::new()
+        };
+
+        let mut moved = Vec::with_capacity(clamped.as_slice().len());
+        let mut new_goals = Vec::new();
+        for (i, &selection) in clamped.as_slice().iter().enumerate() {
+            let head = selection.head;
+            let to = if vertical {
+                let goal = match goals.get(i) {
+                    Some(&goal) => goal,
+                    None => column(buffer, head),
+                };
+                new_goals.push(goal);
+                target(buffer, head, motion, Some(goal))
+            } else if !extend && !selection.is_empty() && motion == Motion::Left {
+                selection.start()
+            } else if !extend && !selection.is_empty() && motion == Motion::Right {
+                selection.end()
+            } else {
+                target(buffer, head, motion, None)
+            };
+            moved.push(if extend {
+                Selection::new(selection.anchor, to)
+            } else {
+                Selection::cursor(to)
+            });
+        }
+        // Each moved selection's head, with its goal, sorted by head.
+        let mut heads: Vec<(usize, usize)> = moved
+            .iter()
+            .zip(new_goals)
+            .map(|(selection, goal)| (selection.head, goal))
+            .collect();
+        self.selections = normal(moved, clamped.primary_index());
+        if vertical {
+            // Each selection keeps the goal of a selection merged into it:
+            // one whose head it holds.
+            heads.sort_unstable();
+            self.goals = self
+                .selections
+                .as_slice()
+                .iter()
+                .map(|merged| {
+                    let i = heads.partition_point(|&(head, _)| head < merged.start());
+                    match heads.get(i) {
+                        Some(&(head, goal)) if head <= merged.end() => goal,
+                        _ => column(buffer, merged.head),
+                    }
+                })
+                .collect();
+        }
+        Ok(self.selections != old)
+    }
+
     /// Adds a cursor on the line above or below every selection's head.
     fn add_cursors(&mut self, set: &BufferSet, direction: Direction) -> Result<bool, EditorError> {
         let buffer = self.buffer_in(set)?;
+        self.goals.clear();
         let old = self.selections.clone();
         let clamped = clamp(buffer, &self.selections);
 
@@ -587,10 +681,12 @@ fn clamp(buffer: &Buffer, selections: &Selections) -> Selections {
         .as_slice()
         .iter()
         .map(|selection| {
-            Selection::new(
-                clamp_offset(buffer, selection.anchor),
-                clamp_offset(buffer, selection.head),
-            )
+            let head = clamp_offset(buffer, selection.head);
+            if selection.is_empty() {
+                Selection::cursor(head)
+            } else {
+                Selection::new(clamp_offset(buffer, selection.anchor), head)
+            }
         })
         .collect();
     normal(list, selections.primary_index())
@@ -694,7 +790,7 @@ fn next_line_offset(buffer: &Buffer, head: usize, direction: Direction) -> Optio
 }
 
 /// Whether `c` is a word character: alphanumeric or `_`.
-fn is_word(c: char) -> bool {
+pub(crate) fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 

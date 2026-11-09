@@ -3,7 +3,7 @@
 //!
 //! [`CommandRegistry::with_all_commands`]: crate::CommandRegistry::with_all_commands
 
-use crate::Keymap;
+use crate::{Binding, Keymap, Mode, Typing, cursor_commands as cursor, editor_commands as editor};
 
 /// The keymap's name.
 pub const NAME: &str = "vscode";
@@ -44,5 +44,52 @@ pub const MODE: &str = "default";
 /// that Shift makes, so the notation's folding of Shift into chars changes
 /// nothing here.
 pub fn keymap() -> Keymap {
-    todo!()
+    const BINDINGS: [(&str, &str); 39] = [
+        ("enter", editor::NEWLINE),
+        ("backspace", editor::DELETE_BACKWARD),
+        ("delete", editor::DELETE_FORWARD),
+        ("cmd-z", editor::UNDO),
+        ("shift-cmd-z", editor::REDO),
+        ("cmd-d", editor::ADD_NEXT_MATCH),
+        ("shift-cmd-l", editor::SELECT_ALL_MATCHES),
+        ("alt-cmd-up", editor::ADD_CURSOR_ABOVE),
+        ("alt-cmd-down", editor::ADD_CURSOR_BELOW),
+        ("left", cursor::LEFT),
+        ("right", cursor::RIGHT),
+        ("up", cursor::UP),
+        ("down", cursor::DOWN),
+        ("alt-left", cursor::WORD_LEFT),
+        ("alt-right", cursor::WORD_RIGHT),
+        ("home", cursor::LINE_START),
+        ("cmd-left", cursor::LINE_START),
+        ("end", cursor::LINE_END),
+        ("cmd-right", cursor::LINE_END),
+        ("cmd-up", cursor::TEXT_START),
+        ("cmd-down", cursor::TEXT_END),
+        ("shift-left", cursor::SELECT_LEFT),
+        ("shift-right", cursor::SELECT_RIGHT),
+        ("shift-up", cursor::SELECT_UP),
+        ("shift-down", cursor::SELECT_DOWN),
+        ("alt-shift-left", cursor::SELECT_WORD_LEFT),
+        ("alt-shift-right", cursor::SELECT_WORD_RIGHT),
+        ("shift-home", cursor::SELECT_LINE_START),
+        ("shift-cmd-left", cursor::SELECT_LINE_START),
+        ("shift-end", cursor::SELECT_LINE_END),
+        ("shift-cmd-right", cursor::SELECT_LINE_END),
+        ("shift-cmd-up", cursor::SELECT_TEXT_START),
+        ("shift-cmd-down", cursor::SELECT_TEXT_END),
+        ("cmd-a", cursor::SELECT_ALL),
+        ("escape", cursor::COLLAPSE),
+        ("alt-backspace", cursor::DELETE_WORD_LEFT),
+        ("alt-delete", cursor::DELETE_WORD_RIGHT),
+        ("cmd-backspace", cursor::DELETE_LINE_START),
+        ("cmd-delete", cursor::DELETE_LINE_END),
+    ];
+    let mut keymap =
+        Keymap::new(NAME, vec![Mode::new(MODE, Typing::Insert)]).expect("one mode, no duplicates");
+    for (keys, command) in BINDINGS {
+        let binding = Binding::run(keys, command).expect("the bindings above parse");
+        keymap.bind(binding).expect("bindings name no mode");
+    }
+    keymap
 }

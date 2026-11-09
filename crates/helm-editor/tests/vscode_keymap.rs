@@ -127,7 +127,6 @@ impl Session {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn cursor_command_ids_are_the_documented_ones() {
     assert_eq!(
         cursor_commands::ALL,
@@ -169,7 +168,6 @@ fn cursor_command_ids_are_the_documented_ones() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn with_all_commands_registers_both_lists_sorted_with_titles() {
     let registry = CommandRegistry::with_all_commands();
     let ids: Vec<&str> = registry.commands().map(|c| c.id.as_str()).collect();
@@ -224,7 +222,6 @@ fn text_of(set: &BufferSet, editor: &Editor) -> String {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn each_cursor_command_runs_its_editor_method() {
     let motions = [
         ("left", Motion::Left),
@@ -298,7 +295,6 @@ fn each_cursor_command_runs_its_editor_method() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn the_keymap_is_one_typing_mode() {
     let keymap = vscode::keymap();
     assert_eq!(vscode::NAME, "vscode");
@@ -309,7 +305,6 @@ fn the_keymap_is_one_typing_mode() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn the_keymap_holds_exactly_the_documented_bindings() {
     let keymap = vscode::keymap();
     let mut actual: Vec<(String, String)> = keymap
@@ -338,7 +333,6 @@ fn the_keymap_holds_exactly_the_documented_bindings() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn every_bound_command_is_registered() {
     let registry = CommandRegistry::with_all_commands();
     for binding in vscode::keymap().bindings() {
@@ -354,7 +348,6 @@ fn every_bound_command_is_registered() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn each_binding_resolves_to_its_command() {
     let dispatcher = Dispatcher::new(CommandRegistry::with_all_commands(), vscode::keymap());
     for (keys, command) in BINDINGS {
@@ -370,7 +363,6 @@ fn each_binding_resolves_to_its_command() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn typing_and_arrows() {
     let mut s = Session::new("", &[Selection::cursor(0)]);
     s.type_text("abc");
@@ -386,7 +378,6 @@ fn typing_and_arrows() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn up_and_down_keep_the_goal_through_keys() {
     let mut s = Session::new("abcdef\nab\nabcdef", &[Selection::cursor(5)]);
     s.keys("down down");
@@ -398,7 +389,6 @@ fn up_and_down_keep_the_goal_through_keys() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn shift_selects_and_typing_replaces_the_selection() {
     let mut s = Session::new("say hello", &[Selection::cursor(9)]);
     s.keys("alt-shift-left");
@@ -411,7 +401,6 @@ fn shift_selects_and_typing_replaces_the_selection() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn select_all_then_delete_and_undo() {
     let mut s = Session::new("one\r\ntwo", &[Selection::cursor(2)]);
     s.keys("cmd-a");
@@ -424,7 +413,6 @@ fn select_all_then_delete_and_undo() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn word_and_line_deletes() {
     let mut s = Session::new("let foo = bar;", &[Selection::cursor(13)]);
     s.keys("alt-backspace");
@@ -440,7 +428,6 @@ fn word_and_line_deletes() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn escape_drops_extra_cursors_then_the_selection() {
     let mut s = Session::new("ab ab ab", &[Selection::cursor(1)]);
     s.keys("cmd-d cmd-d cmd-d");
@@ -457,7 +444,6 @@ fn escape_drops_extra_cursors_then_the_selection() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn multi_cursor_movement_through_keys() {
     let mut s = Session::new("a1\nb2\nc3", &[Selection::cursor(0)]);
     s.keys("alt-cmd-down alt-cmd-down");
@@ -471,7 +457,6 @@ fn multi_cursor_movement_through_keys() {
 }
 
 #[test]
-#[ignore = "T-107: not implemented yet"]
 fn option_text_still_types() {
     let mut s = Session::new("", &[Selection::cursor(0)]);
     let alt_e = Keystroke::parse("alt-e").expect("valid key");
