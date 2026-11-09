@@ -10,13 +10,14 @@ Phase 1 (headless core) is in progress. There is no window yet, so there is noth
 
 - T-101 Buffer trait and offset conversions — done
 - T-102 Transactions with undo and redo — done
-- T-103 Snapshots and concurrent readers — in progress
+- T-103 Snapshots and concurrent readers — done
 - T-104 Line endings and BOM preservation — done
-- T-105 Selections and multiple cursors — in progress
-- T-106 Command registry and keymap engine — not started
-- T-107 VS Code bindings — not started
+- T-105 Selections and multiple cursors — done
+- T-106 Command registry and keymap engine — done
+- T-107 VS Code bindings — in progress
 - T-108 Vim modes, motions, operators and counts — not started
 - T-109 Vim text objects, registers, repeat and commands — not started
+- T-110 Amend a transaction, so a run of keystrokes undoes in one step — done
 
 ## Crates
 
