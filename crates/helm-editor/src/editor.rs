@@ -95,6 +95,36 @@ use crate::{EditorError, Motion, Selection, Selections};
 /// [`set_selections`](Self::set_selections). If an Up or Down move merges
 /// selections, the merged one keeps the goal of one of them; which one is
 /// not specified.
+///
+/// # Undo groups (T-108)
+///
+/// An undo group makes a run of editing commands one undo step, such as
+/// everything typed between Vim's `i` and Escape.
+/// [`begin_undo_group`](Self::begin_undo_group) opens one and
+/// [`end_undo_group`](Self::end_undo_group) closes it. While a group is
+/// open:
+///
+/// - The first editing command that applies a transaction applies it as
+///   usual. Each later one folds its edits into that transaction with
+///   [`BufferSet::amend`](helm_text::BufferSet::amend) instead of applying
+///   a new one, and returns that transaction's id. A command with nothing
+///   to do applies and amends nothing, and returns `Ok(None)`, as before.
+/// - Undoing the group's transaction puts back the selections from just
+///   before the group's first edit. Redoing it puts back the selections
+///   from just after its last edit.
+/// - If `amend` refuses, because another transaction is now on top of the
+///   buffer's undo history (an agent's edit, say), the command applies a
+///   new transaction instead, and the group goes on from that one. The
+///   group then undoes in more than one step, and nothing is lost.
+/// - Moving or setting selections doesn't end the group.
+///   [`undo`](Self::undo) and [`redo`](Self::redo) do, before they undo or
+///   redo anything. Opening a group while one is open ends the first.
+///
+/// The editor decides nothing about when a group ends: its caller does.
+/// Vim's commands open one when insert mode starts and close it on Escape
+/// (see [`vim`](crate::vim)). `helm-ui` closes any open group when it
+/// switches keymaps, since a keymap switch can't reach the editor.
+/// Grouping VS Code's typing by pauses and cursor moves is a later task.
 #[derive(Clone, Debug)]
 pub struct Editor {
     buffer: BufferId,
@@ -456,6 +486,24 @@ impl Editor {
         };
         let old = std::mem::replace(&mut self.selections, Selections::single(collapsed));
         Ok(self.selections != old)
+    }
+
+    /// Opens an undo group (T-108), as the type docs describe. If a group
+    /// is already open, it ends first and a new one starts, so the next
+    /// edit is a new undo step.
+    pub fn begin_undo_group(&mut self) {
+        todo!()
+    }
+
+    /// Closes the open undo group (T-108). Returns whether one was open.
+    /// The next edit is a new undo step.
+    pub fn end_undo_group(&mut self) -> bool {
+        todo!()
+    }
+
+    /// Whether an undo group is open (T-108).
+    pub fn in_undo_group(&self) -> bool {
+        todo!()
     }
 }
 

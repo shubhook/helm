@@ -61,15 +61,28 @@
 //! from a [`KeySequence`] (one keystroke, or a chord such as
 //! `cmd-k cmd-s`) to a command id, each scoped to a mode and an optional
 //! context. VS Code's keymap ([`vscode::keymap`], T-107) has one mode;
-//! Vim's (T-108) has several. A mode says whether a key no binding matches types its text,
-//! so typing takes the same path as every other command.
+//! Vim's ([`vim::keymap`], T-108) has six. A mode says what a key no
+//! binding matches does: it types its text, it does nothing, or, in Vim's
+//! counting modes, a digit adds to a count. So typing takes the same path
+//! as every other command.
 //!
 //! A [`Dispatcher`] holds the active keymap and the registry, and each
-//! editor holds a [`KeyState`]: its mode, a chord typed so far and a
-//! pending operator. [`Dispatcher::resolve`] turns one key event into a
+//! editor holds a [`KeyState`]: its mode, a chord typed so far, a pending
+//! operator and a pending count. [`Dispatcher::resolve`] turns one key event into a
 //! [`Resolution`] and documents which binding wins.
 //! [`Dispatcher::set_keymap`] switches keymaps at runtime, and every open
 //! editor uses the new keymap from its next key (ED-6).
+//!
+//! # Counts and undo groups (T-108)
+//!
+//! In a [`Typing::Count`] mode, digits make a count in the [`KeyState`].
+//! [`Dispatcher::resolve_counted`] hands it out with the command it goes
+//! with, and [`CommandRegistry::run_counted`] passes it to the command as
+//! [`CommandContext::count`]. [`Editor::begin_undo_group`] and
+//! [`Editor::end_undo_group`] make a run of edits one undo step, which is
+//! how Vim's insert mode undoes. The [`vim`] module docs hold Vim's rules,
+//! and [`CommandRegistry::with_vim_commands`] holds every command both
+//! keymaps bind.
 
 mod command;
 pub mod cursor_commands;
@@ -81,6 +94,8 @@ mod key;
 mod keymap;
 mod motion;
 mod selection;
+pub mod vim;
+pub mod vim_commands;
 pub mod vscode;
 
 pub use command::{

@@ -46,8 +46,21 @@ pub enum Typing {
     /// any and Ctrl and Cmd aren't held. VS Code's only mode, and Vim's
     /// insert mode.
     Insert,
-    /// It does nothing. Vim's normal and visual modes.
+    /// It does nothing.
     Ignore,
+    /// It does nothing, and digits make a count (T-108). Vim's normal,
+    /// visual and operator-pending modes.
+    ///
+    /// With no chord pending, a [`Key::Char`](crate::Key::Char) digit with
+    /// no modifiers adds a digit to the state's count before any binding
+    /// is looked at: `1` to `9` always, and `0` only when a count is
+    /// already pending. So in a counting mode a binding on `1` to `9`
+    /// never matches, and a binding on `0` matches only when no count is
+    /// pending, which is Vim's `0` motion.
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) has the full
+    /// rule, and [`KeyState::count`](crate::KeyState::count) shows the
+    /// count.
+    Count,
 }
 
 /// One mode of a keymap. A mode is data: its id and what typing does in
