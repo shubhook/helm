@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// One editor's input state: its mode, the keys of a chord typed so far,
-/// and a pending operator.
+/// a pending operator, and a pending count (T-108).
 ///
 /// Each editor has its own, so a chord half typed in one pane doesn't carry
 /// over to another. A state belongs to the [`Dispatcher`] that made it with
@@ -43,8 +43,18 @@ impl KeyState {
         self.operator.as_ref().map(|(command, _)| command)
     }
 
-    /// Drops the pending chord and the pending operator, and returns to the
-    /// mode the operator was set in, if one was held. Returns whether
+    /// The count typed so far in a [`Typing::Count`] mode (T-108), or
+    /// `None` if no digit is pending. The count typed before an operator
+    /// moves onto the operator when it is set, so after `2 d` this is
+    /// `None` until another digit comes. `helm-ui` shows it in the status
+    /// bar while it waits for the next key.
+    pub fn count(&self) -> Option<usize> {
+        todo!()
+    }
+
+    /// Drops the pending chord, the pending operator and the pending count
+    /// (T-108), including a count held with the operator, and returns to
+    /// the mode the operator was set in, if one was held. Returns whether
     /// anything was pending. `helm-ui` calls this when the editor loses
     /// focus or the user clicks in it.
     pub fn cancel(&mut self) -> bool {
@@ -64,8 +74,8 @@ impl KeyState {
 /// match when [`Dispatcher::resolve`] returns it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolution {
-    /// The key started or continued a chord, or set a pending operator.
-    /// Nothing runs yet.
+    /// The key started or continued a chord, set a pending operator, or
+    /// added a digit to a count. Nothing runs yet.
     Pending,
     /// Run this command. Typed text is an invocation of
     /// [`editor_commands::INSERT`](crate::editor_commands::INSERT).
@@ -92,9 +102,9 @@ pub enum Resolution {
 /// switch the next time it is passed to [`resolve`](Self::resolve) or
 /// [`sync`](Self::sync), and then:
 ///
-/// - it cancels as [`KeyState::cancel`] does: it drops its pending chord
-///   and pending operator, running nothing, and goes back to the mode the
-///   operator was set in, if one was held;
+/// - it cancels as [`KeyState::cancel`] does: it drops its pending chord,
+///   pending operator and pending count, running nothing, and goes back to
+///   the mode the operator was set in, if one was held;
 /// - then it keeps its mode if the new keymap has a mode with the same id,
 ///   and otherwise goes to the new keymap's initial mode.
 ///
@@ -173,6 +183,12 @@ impl Dispatcher {
     /// its context is `None` or one of `contexts`. The first rule that fits
     /// decides:
     ///
+    /// 0. **Count (T-108).** If `M`'s [`Typing`](crate::Typing) is
+    ///    `Count`, no chord is pending, and the keystroke is a
+    ///    [`Key::Char`](crate::Key::Char) digit with no modifiers that is
+    ///    `1` to `9`, or `0` with a count already pending, the digit is
+    ///    added to the state's count, saturating at `usize::MAX`:
+    ///    `Pending`. No binding is looked at.
     /// 1. **Chord prefix.** If `S` is a strict prefix of an applying
     ///    binding's keys, `S` becomes the pending chord: `Pending`. This
     ///    holds even when another applying binding's keys equal `S`. A
@@ -182,27 +198,29 @@ impl Dispatcher {
     ///    over one without, then the one added later. The pending chord
     ///    clears, and the winner acts:
     ///    - [`Action::Run`](crate::Action::Run) with no operator pending:
-    ///      `Run` of the command.
+    ///      `Run` of the command. The pending count goes with it, as
+    ///      [`resolve_counted`](Self::resolve_counted) says, and clears.
     ///    - `Action::Run` with an operator pending: `Run` of the operator,
     ///      with the binding's command as its
-    ///      [`motion`](crate::CommandArgs::motion). The operator clears and
-    ///      the mode goes back to the one the operator was set in.
+    ///      [`motion`](crate::CommandArgs::motion). The operator and the
+    ///      counts clear and the mode goes back to the one the operator was
+    ///      set in.
     ///    - [`Action::Operator`](crate::Action::Operator) with no operator
     ///      pending: the command becomes the pending operator, set in mode
-    ///      `M`: `Pending`.
+    ///      `M`, and the pending count moves onto it: `Pending`.
     ///    - `Action::Operator` with an operator pending: the pending one is
     ///      cancelled as in rule 3: `Cancelled`. The binding's `then_mode`
     ///      doesn't apply.
-    ///    - No action: a pending operator is cancelled, without returning
-    ///      `Cancelled`: `Done`.
+    ///    - No action: a pending operator and a pending count are
+    ///      cancelled, without returning `Cancelled`: `Done`.
     ///
     ///    Then, except where noted, the binding's `then_mode`, if any,
     ///    becomes the mode, after any return to the operator's mode.
-    /// 3. **Broken chord or operator.** If a chord or an operator is
-    ///    pending, both clear, the mode goes back to the one the operator
-    ///    was set in, if one was held, and the key is dropped:
-    ///    `Cancelled`. So Escape cancels anything pending unless a binding
-    ///    says otherwise.
+    /// 3. **Broken chord, operator or count.** If a chord, an operator or
+    ///    a count is pending, all of them clear, the mode goes back to the
+    ///    one the operator was set in, if one was held, and the key is
+    ///    dropped: `Cancelled`. So Escape cancels anything pending unless a
+    ///    binding says otherwise.
     /// 4. **Typing.** If mode `M`'s [`Typing`](crate::Typing) is `Insert`,
     ///    the event has non-empty [`text`](KeyEvent::text), and neither
     ///    Ctrl nor Cmd is held: `Run` of [`Invocation::insert`] with the
@@ -211,6 +229,9 @@ impl Dispatcher {
     ///
     /// Mode changes happen here, before the caller runs the returned
     /// command, and stand even if the command then fails.
+    ///
+    /// This is [`resolve_counted`](Self::resolve_counted) without the
+    /// count.
     pub fn resolve(&self, state: &mut KeyState, event: &KeyEvent, contexts: &[&str]) -> Resolution {
         self.sync(state);
         let keystroke = event.keystroke;
@@ -298,9 +319,39 @@ impl Dispatcher {
         }
     }
 
+    /// [`resolve`](Self::resolve), and the count that goes with a
+    /// [`Resolution::Run`] (T-108). The resolution and the change to
+    /// `state` are exactly what `resolve` gives for the same state and
+    /// event.
+    ///
+    /// The count is `None` for every resolution but `Run`, and for a `Run`
+    /// with no digits typed before it. For a `Run` of a pending operator it
+    /// is the count typed before the operator times the count typed after
+    /// it, or whichever one was typed, saturating at `usize::MAX`. So in
+    /// Vim's keymap `2 d 3 w` gives 6, `d 3 w` gives 3 and `d w` gives
+    /// `None`. A count survives a chord: `1 2 g g` gives 12.
+    ///
+    /// `helm-ui` uses this for the ids it runs itself, and passes the count
+    /// to [`CommandRegistry::run_counted`] for the rest, as
+    /// [`dispatch`](Self::dispatch) does.
+    #[expect(
+        unused_variables,
+        reason = "T-108 interface stub; the implementation deletes this"
+    )]
+    pub fn resolve_counted(
+        &self,
+        state: &mut KeyState,
+        event: &KeyEvent,
+        contexts: &[&str],
+    ) -> (Resolution, Option<usize>) {
+        todo!()
+    }
+
     /// [`resolve`](Self::resolve), then, for [`Resolution::Run`], runs the
-    /// invocation with [`CommandRegistry::run`] on `editor` and `set`.
-    /// Returns the resolution, or the command's error.
+    /// invocation on `editor` and `set` with
+    /// [`CommandRegistry::run_counted`], passing the count
+    /// [`resolve_counted`](Self::resolve_counted) gives (T-108). Returns
+    /// the resolution, or the command's error.
     pub fn dispatch(
         &self,
         state: &mut KeyState,

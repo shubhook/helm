@@ -59,7 +59,9 @@ pub struct CommandArgs {
     pub text: Option<String>,
     /// For an operator, the motion it applies to: the command a key bound
     /// after the operator named (see [`Action::Operator`](crate::Action)).
-    /// What an operator does with it is up to the operator (T-108).
+    /// What an operator does with it is up to the operator. Vim's
+    /// operators (T-108) take the motion ids in
+    /// [`vim_commands`](crate::vim_commands).
     pub motion: Option<CommandId>,
 }
 
@@ -105,6 +107,13 @@ pub struct CommandContext<'a> {
     pub set: &'a mut BufferSet,
     /// The invocation's arguments.
     pub args: &'a CommandArgs,
+    /// The count typed before the command (T-108), or `None` if none was.
+    /// [`Dispatcher::resolve_counted`](crate::Dispatcher::resolve_counted)
+    /// says where it comes from, and
+    /// [`CommandRegistry::run_counted`] passes it in. A command that takes
+    /// no count ignores it. One that does reads `None` as its default,
+    /// usually 1.
+    pub count: Option<usize>,
 }
 
 /// The function a command runs. Plain function pointers keep commands
@@ -157,12 +166,24 @@ impl CommandRegistry {
     /// [`with_editor_commands`](Self::with_editor_commands) and the cursor
     /// commands under the ids in
     /// [`cursor_commands`](crate::cursor_commands): every command the
-    /// [`vscode`](crate::vscode) keymap binds. This is the registry
-    /// `helm-ui` builds its dispatcher with.
+    /// [`vscode`](crate::vscode) keymap binds. `helm-ui` builds its
+    /// dispatcher with [`with_vim_commands`](Self::with_vim_commands),
+    /// which holds these and Vim's.
     pub fn with_all_commands() -> Self {
         let mut registry = Self::with_editor_commands();
         cursor_commands::register_all(&mut registry);
         registry
+    }
+
+    /// A registry holding the commands of
+    /// [`with_all_commands`](Self::with_all_commands) and the Vim commands
+    /// under the ids in [`vim_commands`](crate::vim_commands) (T-108):
+    /// every command the [`vscode`](crate::vscode) and [`vim`](crate::vim)
+    /// keymaps bind, 91 in all. One dispatcher built with it can switch
+    /// between the two keymaps at runtime (ED-6). This is the registry
+    /// `helm-ui` builds its dispatcher with.
+    pub fn with_vim_commands() -> Self {
+        todo!()
     }
 
     /// Adds `command`. Errors, and adds nothing, if its id isn't in the
@@ -195,6 +216,9 @@ impl CommandRegistry {
     /// Errors with [`CommandError::UnknownCommand`] if the id isn't
     /// registered, and passes on the command's own error. Every editor
     /// command changes nothing when it errors, as [`EditorError`] says.
+    ///
+    /// The command's [`CommandContext::count`] is `None`. This is
+    /// [`run_counted`](Self::run_counted) with no count.
     pub fn run(
         &self,
         invocation: &Invocation,
@@ -210,7 +234,30 @@ impl CommandRegistry {
             editor,
             set,
             args: &invocation.args,
+            count: None,
         })
+    }
+
+    /// Runs `invocation`'s command on `editor` and `set` with `count` as
+    /// its [`CommandContext::count`] (T-108). Errors as
+    /// [`run`](Self::run) does.
+    ///
+    /// [`Dispatcher::dispatch`](crate::Dispatcher::dispatch) runs every
+    /// command through this, with the count
+    /// [`Dispatcher::resolve_counted`](crate::Dispatcher::resolve_counted)
+    /// gave.
+    #[expect(
+        unused_variables,
+        reason = "T-108 interface stub; the implementation deletes this"
+    )]
+    pub fn run_counted(
+        &self,
+        invocation: &Invocation,
+        count: Option<usize>,
+        editor: &mut Editor,
+        set: &mut BufferSet,
+    ) -> Result<(), CommandError> {
+        todo!()
     }
 }
 
