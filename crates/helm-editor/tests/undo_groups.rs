@@ -261,3 +261,37 @@ fn an_error_in_a_group_changes_nothing() {
     e.undo(&mut set).unwrap();
     assert_eq!(text(&set, &e), "ab");
 }
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn a_failed_undo_leaves_the_group_open() {
+    let mut set = BufferSet::new();
+    let a = set.add(Buffer::from("a"));
+    let b = set.add(Buffer::from("b"));
+    // One transaction across both buffers, then a later one in `b`, so
+    // undoing from `a` is blocked.
+    let mut both = Transaction::new();
+    both.push(Edit::insert(a, 1, "1"));
+    both.push(Edit::insert(b, 1, "1"));
+    let both = set.apply(both).unwrap();
+    let mut later = Transaction::new();
+    later.push(Edit::insert(b, 0, "2"));
+    set.apply(later).unwrap();
+    let mut e = Editor::new(a, FileFormat::default());
+    e.set_selections(Selections::single(Selection::cursor(2)));
+    e.begin_undo_group();
+    assert_eq!(
+        e.undo(&mut set),
+        Err(EditorError::Blocked {
+            transaction: both,
+            buffer: b
+        })
+    );
+    assert!(e.in_undo_group());
+    e.insert(&mut set, "x").unwrap();
+    e.insert(&mut set, "y").unwrap();
+    e.end_undo_group();
+    assert_eq!(text(&set, &e), "a1xy");
+    e.undo(&mut set).unwrap();
+    assert_eq!(text(&set, &e), "a1");
+}

@@ -63,8 +63,10 @@
 //!   anchor, and the visual cursor is the char that ends at the head.
 //! - Pointing back (head before anchor), the visual cursor starts at the
 //!   head, and the anchor char ends at the anchor.
-//! - A selection is never empty in a visual mode, except on the empty last
-//!   line, where there is no char to cover: then both are at its offset.
+//! - The visual cursor and the anchor are always on a char, so every
+//!   selection in a visual mode covers at least one char and decodes to
+//!   one pair of ends. The one exception is `v` or `V` on the empty last
+//!   line, below.
 //!
 //! So `v` on `b` in `abc` gives the selection `1..2`, written `a^b|c`, and
 //! `l` then gives `1..3`, `a^bc|`. On an empty line the selection covers its
@@ -79,6 +81,26 @@
 //! draws whole lines in that mode. `v` and `V` switch between the two
 //! modes without changing the selection. `$` in a visual mode stops on the
 //! line's last char, where Vim's also takes the line break.
+//!
+//! **The empty last line.** The empty line after a final line break, at
+//! the end of the text, has no char to cover. If it could be a visual end,
+//! `0..4` in `"a\nb\n"` would mean both "visual cursor on `b`" and "visual
+//! cursor on the empty last line", and with an empty line before it two
+//! ends would cover the same bytes. So in a visual mode it is never an
+//! end:
+//!
+//! - A visual motion whose settled target is the empty last line lands on
+//!   the line before it instead: on that line's last char, or on its line
+//!   break if it is empty. So `v2j` and `vG` on `"|a\nb\n"` select `a\nb`.
+//! - `v` or `V` with the cursor on the empty last line gives an empty
+//!   selection at the end of the text, the only empty visual selection in a
+//!   text that isn't empty. Its visual cursor and anchor are both at the end
+//!   of the text. The first visual motion that moves the cursor also moves
+//!   the anchor onto the line before, by the same rule. A motion that can't
+//!   move (`j` there) leaves it empty, and Escape leaves a cursor there.
+//!
+//! Vim has no such line, since it reads a final line break as the end of
+//! the last line, so no Vim behaviour is lost.
 //!
 //! # Motions
 //!
@@ -119,7 +141,9 @@
 //! on its last char. Under an operator the target isn't settled: `dl` on
 //! the last char deletes it, and `d$` deletes to the end of the line's
 //! text. Vim's `$` is inclusive of the last char. Here it is exclusive of
-//! the end of the line's text, which covers the same bytes.
+//! the end of the line's text, which covers the same bytes. A counted `$`
+//! that ends on an empty line is the one case where that differs; see
+//! "Operators".
 //!
 //! `j` and `k` on the last or first line don't move, and under an operator
 //! they then do nothing. `j` and `k` keep a goal column, in chars, exactly
@@ -140,15 +164,22 @@
 //! ideographs a class of their own; here `中文` is a word like `ab`.
 //!
 //! - `w`: if the char under the cursor isn't white space, skip its run.
-//!   Then skip white space, stopping at the start of an empty line. Stop
-//!   at the end of the text if nothing follows.
+//!   Then skip white space, stopping at the start of an empty line other
+//!   than the one it started on. Stop at the end of the text if nothing
+//!   follows. So from an empty line `w` goes to the next empty line or the
+//!   next line's first non-blank, whichever comes first.
 //! - `b`: move back one char. Skip white space backward, stopping at the
 //!   start of an empty line. Then move back to the first char of the run
 //!   the cursor is in. At offset 0 it stays.
 //! - `e`: move forward one char. If that char is in the same run as the one
 //!   before, go to the run's last char. Otherwise skip white space and go
 //!   to the last char of the run after it. If there is no next run, `e`
-//!   stays where it was.
+//!   stays where it was. A run is word or punctuation chars, never white
+//!   space, so `e` on `a` in `a.(b` goes to `(`: `.(` is one run of
+//!   punctuation.
+//!
+//! `^` on a line of only blanks goes to the end of its text, which settles
+//! onto its last blank, as in Vim.
 //!
 //! # Operators
 //!
@@ -174,17 +205,25 @@
 //!   line, it stops at the start of the next line instead. The same goes
 //!   for `W`.
 //! - **`cw` is `ce`.** When the char under the cursor isn't white space,
-//!   `cw` and `cW` act as `ce` and `cE`, except that a cursor already on
-//!   the last char of its word stays there, so `cw` changes just that
-//!   char. On white space, `cw` is like `dw` and changes up to the next
-//!   word.
+//!   `cw` and `cW` act as `ce` and `cE`, except that the first of the `n`
+//!   steps doesn't move a cursor already on the last char of its word. So
+//!   `cw` there changes just that char, and `c2w` on the last `o` of `foo
+//!   bar` changes `o bar`. Later steps are plain `e` steps. On white
+//!   space, `cw` is like `dw` and changes up to the next word.
 //! - **An exclusive range that ends at the start of a later line.** If the
 //!   range begins at or before its line's first non-blank, it becomes
 //!   linewise, over the lines from its first up to the one before its end.
 //!   Otherwise its end moves back to the end of the previous line's text.
 //!   So `dw` on an empty line deletes the line, and `db` at the start of a
 //!   line, when `b` lands on the first word of the line before, deletes
-//!   that whole line.
+//!   that whole line. This rule is for exclusive motions only, never `$`.
+//! - **A counted `$` that ends on an empty line.** Vim's `$` is inclusive,
+//!   and an empty line has no char to include. If the range begins at or
+//!   before its line's first non-blank, it becomes linewise over every line
+//!   from its first to the empty one. Otherwise it runs to the empty
+//!   line's offset, so its line break stays. So `2D` from `b` in
+//!   `"abc\n\nd"` deletes `bc\n`, and from an indent it deletes both lines.
+//!   This holds for `D`, `C`, `d$` and `c$`, measured in Vim 9.1.
 //!
 //! **Linewise delete** of lines `a` to `b` deletes from the start of `a` to
 //! the start of the line after `b`. When `b` is the last line, it deletes
@@ -202,11 +241,24 @@
 //! settled. After a **change** each cursor is at its range's start, in
 //! insert mode.
 //!
-//! With several cursors, the ranges are joined where they overlap and
-//! applied as one transaction, as
+//! With several cursors, linewise spans from different cursors that
+//! overlap or touch (the lines `a..=b` and `b + 1..=c`) join into one span
+//! first, before the rules above turn lines into bytes. So `dd` at cursors
+//! on two neighbouring lines does exactly what `2dd` at the first does,
+//! the last line included. Then the byte ranges are joined where they
+//! overlap and applied as one transaction, as
 //! [`Editor::delete_backward`](crate::Editor::delete_backward) joins them.
 //! A cursor whose own range is empty but which sits inside another
 //! cursor's range ends where that range began.
+//!
+//! **A `c` whose motion finds nothing still enters insert mode.** `ch` at a
+//! line's start, `cj` on the last line and `ck` on the first delete
+//! nothing, open an undo group and type where the cursor is, so the typing
+//! undoes in one step. Vim does this for `ch` and `c0`, but beeps and stays
+//! in normal mode for `cj` and `ck`. Helm can't match that without a
+//! command asking for a mode switch: `change_pending`'s bindings switch to
+//! insert mode before the command runs. That is an open question for
+//! Khakha.
 //!
 //! # One-key edits
 //!
@@ -240,7 +292,10 @@
 //!
 //! `o` and `O` insert [`FileFormat::newline`](helm_text::FileFormat::newline)
 //! of the editor's format, at the end of the line's text or at its start,
-//! as the group's first edit, with no indentation. `c` and its one-key
+//! as the group's first edit, with no indentation. Their undo record keeps
+//! the cursors from before the key, so `u` puts each cursor back where it
+//! was, as Vim does. (`A` moves the cursor before its group starts, so `u`
+//! after `A` goes to the line's last char, also as Vim does.) `c` and its one-key
 //! forms open the group before they delete, so the deletion and the typing
 //! undo together. A visual `c` does the same.
 //!
@@ -266,9 +321,28 @@
 //! a cursor at its start, settled. After `u` that is where the change
 //! began. After `ctrl-r` it is the start of the selections from after the
 //! change: after redoing `ihello<Esc>` the cursor is just past `hello`,
-//! where Vim would put it on the `h`. A `Blocked` error comes back as
-//! [`CommandError::Editor`](crate::CommandError::Editor), with nothing
-//! changed by the step that failed.
+//! where Vim puts it on the `h` (measured in Vim 9.1). A `Blocked` error
+//! comes back as [`CommandError::Editor`](crate::CommandError::Editor),
+//! with nothing changed by the step that failed.
+//!
+//! # Measured against Vim
+//!
+//! Every row of the normal-mode tables in `tests/vim_normal.rs` and the
+//! visual tables in `tests/vim_visual.rs` that ends in normal mode was run
+//! through Vim 9.1 (`vim -u NONE -N`, `binary`), except rows whose text has
+//! a CR, which Vim reads with a different line model. The rows that differ
+//! are the choices this spec makes on purpose, or held for Khakha:
+//!
+//! - Columns count chars, so `j` from `文` in `中文x` lands on the second
+//!   char of the line below, where Vim counts display cells (T-107's rule).
+//! - `中文` is one word, where Vim gives CJK ideographs a class of their own.
+//! - The empty last line after a final line break is a line here, and not
+//!   in Vim.
+//! - `ctrl-r` leaves the cursor after the redone text.
+//! - `cj` and `ck` that find nothing enter insert mode.
+//! - `de` and `dE` on the last char of the text delete nothing here and
+//!   delete that char in Vim. That row is pinned by the tests and held for
+//!   Khakha.
 //!
 //! # Visual-mode commands
 //!

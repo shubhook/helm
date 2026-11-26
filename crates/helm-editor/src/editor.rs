@@ -116,15 +116,20 @@ use crate::{EditorError, Motion, Selection, Selections};
 ///   buffer's undo history (an agent's edit, say), the command applies a
 ///   new transaction instead, and the group goes on from that one. The
 ///   group then undoes in more than one step, and nothing is lost.
-/// - Moving or setting selections doesn't end the group.
-///   [`undo`](Self::undo) and [`redo`](Self::redo) do, before they undo or
-///   redo anything. Opening a group while one is open ends the first.
+/// - Moving or setting selections doesn't end the group. A successful
+///   [`undo`](Self::undo) or [`redo`](Self::redo) ends it, even one that
+///   finds nothing to undo or redo. One that errors (`Blocked` or
+///   `UnknownBuffer`) changes nothing, the group included, so the group
+///   stays open. Opening a group while one is open ends the first.
 ///
 /// The editor decides nothing about when a group ends: its caller does.
 /// Vim's commands open one when insert mode starts and close it on Escape
-/// (see [`vim`](crate::vim)). `helm-ui` closes any open group when it
-/// switches keymaps, since a keymap switch can't reach the editor.
-/// Grouping VS Code's typing by pauses and cursor moves is a later task.
+/// (see [`vim`](crate::vim)). A keymap switch can't reach the editor, so
+/// `helm-ui` must call `end_undo_group` on every open editor right after
+/// [`Dispatcher::set_keymap`](crate::Dispatcher::set_keymap), before any
+/// key reaches the new keymap. Otherwise typing in the new keymap folds
+/// into the group the old one opened. Grouping VS Code's typing by pauses
+/// and cursor moves is a later task.
 #[derive(Clone, Debug)]
 pub struct Editor {
     buffer: BufferId,
@@ -369,6 +374,9 @@ impl Editor {
     ///
     /// Errors with [`EditorError::Blocked`] when `BufferSet::undo` is
     /// blocked, and then nothing changes.
+    ///
+    /// A successful call ends an open undo group (T-108), even when there
+    /// was nothing to undo. An error leaves the group open.
     pub fn undo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.undo(self.buffer)?;
         self.goals.clear();
@@ -384,7 +392,8 @@ impl Editor {
     /// is nothing to redo. If this editor applied that transaction, the
     /// selections go back to what they were just after it.
     ///
-    /// Errors the same way as [`undo`](Self::undo).
+    /// Errors, and ends an open undo group, the same way as
+    /// [`undo`](Self::undo).
     pub fn redo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.redo(self.buffer)?;
         self.goals.clear();

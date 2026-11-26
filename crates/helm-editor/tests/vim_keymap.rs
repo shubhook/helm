@@ -393,3 +393,38 @@ fn switching_between_vscode_and_vim_applies_to_open_editors() {
     drop(press);
     assert_eq!(set.get(e.buffer()).unwrap().to_string(), "xyzbc");
 }
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn closing_the_group_on_a_keymap_switch_keeps_undo_steps_apart() {
+    // What `helm-ui` does on a switch: `set_keymap`, then `sync` and
+    // `end_undo_group` on every open editor.
+    let mut d = Dispatcher::new(CommandRegistry::with_vim_commands(), vim::keymap());
+    let (mut set, mut e) = editor("abc");
+    let mut state = d.key_state();
+    let press = |d: &Dispatcher,
+                 state: &mut helm_editor::KeyState,
+                 e: &mut Editor,
+                 set: &mut BufferSet,
+                 event: KeyEvent| {
+        d.dispatch(state, &event, &[], e, set).unwrap();
+    };
+    press(&d, &mut state, &mut e, &mut set, key('i'));
+    press(&d, &mut state, &mut e, &mut set, key('y'));
+    assert!(e.in_undo_group());
+    d.set_keymap(vscode::keymap());
+    d.sync(&mut state);
+    e.end_undo_group();
+    press(&d, &mut state, &mut e, &mut set, key('z'));
+    d.set_keymap(vim::keymap());
+    d.sync(&mut state);
+    e.end_undo_group();
+    assert_eq!(state.mode().as_str(), "normal");
+    press(&d, &mut state, &mut e, &mut set, key('x'));
+    let text = |set: &BufferSet, e: &Editor| set.get(e.buffer()).unwrap().to_string();
+    assert_eq!(text(&set, &e), "yzbc");
+    for expected in ["yzabc", "yabc", "abc"] {
+        press(&d, &mut state, &mut e, &mut set, key('u'));
+        assert_eq!(text(&set, &e), expected);
+    }
+}

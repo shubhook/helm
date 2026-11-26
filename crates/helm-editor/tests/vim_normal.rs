@@ -617,3 +617,120 @@ fn every_cursor_runs_the_command() {
     v.keys("u");
     assert_eq!(v.show(), "|foo |bar |baz");
 }
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn counted_cw_skips_ahead_only_on_its_first_step() {
+    // Checked against Vim 9.1 with `-u NONE`.
+    table(&[
+        ("fo|o bar", "c2wX<esc>", "fo|X"),
+        ("|a b c", "cwX<esc>", "|X b c"),
+        ("|a b c", "c2wX<esc>", "|X c"),
+        ("a.|b c.d", "cWX<esc>", "a.|X c.d"),
+        ("a.|b c.d e", "c2WX<esc>", "a.|X e"),
+    ]);
+}
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn c_with_a_motion_that_finds_nothing_still_enters_insert() {
+    // Vim does this for `ch` and `c0` at the line's start, and beeps for
+    // `cj` and `ck` at the last and first lines; Helm types in all four.
+    table(&[
+        ("|ab", "chX<esc>", "|Xab"),
+        ("|ab", "c0X<esc>", "|Xab"),
+        ("a|b", "cjX<esc>", "a|Xb"),
+        ("|a\nb", "ckX<esc>", "|Xa\nb"),
+        ("a\n|b", "cjXY<esc>u", "a\n|b"),
+        ("|ab", "chX<esc>u", "|ab"),
+    ]);
+    let mut v = Vim::new("a|b");
+    v.keys("cj");
+    assert_eq!(v.mode(), vim::INSERT);
+    assert!(v.editor.in_undo_group());
+}
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn a_counted_dollar_that_ends_on_an_empty_line() {
+    // Checked against Vim 9.1 with `-u NONE`.
+    table(&[
+        ("a|bc\n\nd", "2D", "|a\nd"),
+        ("a|bc\n\nd", "2d$", "|a\nd"),
+        ("|  bc\n\nd", "2D", "|d"),
+        ("  |bc\n\nd", "2D", "|d"),
+        ("a|bc\n\nd", "2CX<esc>", "a|X\nd"),
+        ("  b|c\n\nd", "2c$X<esc>", "  b|X\nd"),
+        ("|  bc\n\nd", "2CX<esc>", "|X\nd"),
+        ("a|bc\r\n\r\nd", "2D", "|a\r\nd"),
+        ("ab|c\nd", "2D", "a|b"),
+    ]);
+}
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn cursors_on_touching_lines_delete_them_like_one_count() {
+    table(&[
+        ("ab\n|cd\n|ef", "dd", "|ab"),
+        ("ab\n|cd\nef", "2dd", "|ab"),
+        ("ab\r\n|cd\r\n|ef", "dd", "|ab"),
+        ("|ab\n|cd\nef", "dd", "|ef"),
+        ("|a\nb\n|c\nd", "dd", "|b\n|d"),
+        ("ab\n|cd\n|ef", "Vd", "|ab"),
+        ("ab\n|cd\n|ef\ngh", "ccX<esc>", "ab\n|X\ngh"),
+    ]);
+}
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn more_word_and_line_cases() {
+    // Checked against Vim 9.1 with `-u NONE`.
+    table(&[
+        ("a\n|\n  b", "w", "a\n\n  |b"),
+        ("|   \nx", "^", "  | \nx"),
+        ("|a.b", "e", "a|.b"),
+        ("|a.(b", "e", "a.|(b"),
+        ("a|.(b c", "e", "a.|(b c"),
+        ("|a.b", "de", "|b"),
+        ("ab|c", "2d0", "|c"),
+        ("ab|cdef", "d20l", "a|b"),
+    ]);
+}
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn undoing_o_and_capital_o_puts_the_cursor_back_where_it_was() {
+    // Checked against Vim 9.1 with `-u NONE`. Undoing `A` goes to the
+    // line's last char, where the change began.
+    table(&[
+        ("|abc\nd", "oX<esc>u", "|abc\nd"),
+        ("ab|c\nd", "OX<esc>u", "ab|c\nd"),
+        ("|abc", "AX<esc>u", "ab|c"),
+    ]);
+}
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn vim_line_on_its_own_and_operators_without_a_vim_motion() {
+    use helm_editor::{CommandId, Invocation, vim_commands};
+    let mut v = Vim::new("|a\n  b\n  c\nd");
+    let registry = CommandRegistry::with_vim_commands();
+    let line = Invocation::new(vim_commands::LINE);
+    registry
+        .run_counted(&line, Some(3), &mut v.editor, &mut v.set)
+        .unwrap();
+    assert_eq!(v.show(), "a\n  b\n  |c\nd");
+    registry.run(&line, &mut v.editor, &mut v.set).unwrap();
+    assert_eq!(v.show(), "a\n  b\n  |c\nd");
+    for operator in [vim_commands::DELETE, vim_commands::CHANGE] {
+        for motion in [None, Some("cursor.left"), Some("vim.select_left")] {
+            let mut invocation = Invocation::new(operator);
+            invocation.args.motion = motion.map(CommandId::from);
+            registry
+                .run_counted(&invocation, Some(2), &mut v.editor, &mut v.set)
+                .unwrap();
+            assert_eq!(v.show(), "a\n  b\n  |c\nd", "{operator} {motion:?}");
+            assert!(!v.editor.in_undo_group(), "{operator} {motion:?}");
+        }
+    }
+}

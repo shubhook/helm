@@ -355,3 +355,32 @@ fn unbound_keys_do_nothing_in_visual_modes() {
         assert_eq!(v.text(), "abc");
     }
 }
+
+#[test]
+#[ignore = "T-108: not implemented yet"]
+fn the_empty_last_line_is_never_a_visual_end() {
+    table(&[
+        // The visual cursor stops on the line before the empty last line.
+        ("|a\nb\n", "v2j", "^a\nb|\n"),
+        ("|a\nb\n", "vG", "^a\nb|\n"),
+        ("|a\nb\n", "v2jk", "^a|\nb\n"),
+        ("|a\nb\n", "vG<esc>", "a\n|b\n"),
+        ("|a\nb\n", "vGo", "|a\nb^\n"),
+        ("|a\nb\n", "vGo<esc>", "|a\nb\n"),
+        ("|a\nb\n", "vGd", "|\n"),
+        ("|a\nb\n", "VGd", "|"),
+        ("|a\r\nb\r\n", "vGd", "|\r\n"),
+        // An empty line before it is a line like any other.
+        ("|a\n\n", "vj", "^a\n\n|"),
+        ("|a\n\n", "vjjk", "^a|\n\n"),
+        ("|a\n\n", "vG<esc>", "a\n|\n"),
+        // `v` on the empty last line selects nothing, and the first move
+        // puts the anchor on the line before.
+        ("a\nb\n|", "vk", "a\n^b|\n"),
+        ("a\nb\n|", "vkk", "|a\nb^\n"),
+        ("a\nb\n|", "Vkd", "a\n|"),
+        ("a\n\n|", "vk", "a\n^\n|"),
+        ("a\nb\n|", "vj", "a\nb\n|"),
+        ("a\nb\n|", "v<esc>", "a\nb\n|"),
+    ]);
+}
