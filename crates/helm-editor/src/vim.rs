@@ -347,8 +347,9 @@
 //!
 //! T-111 ran `d` and `c` with 58 motion and count forms from random
 //! cursors in 20,000 short texts of ASCII lines through the same Vim, and
-//! found five more kinds of difference, held for Khakha. Each follows the
-//! rules above, and the oracle in `tests/vim_oracle.rs` pins each for `d`:
+//! found five more kinds of difference. Khakha chose to keep all five as
+//! they are. Each follows the rules above, and the oracle in
+//! `tests/vim_oracle.rs` pins each for `d`:
 //!
 //! - Vim's `:help d` exception: a charwise `d` across lines with only
 //!   blanks before its start and after its end becomes linewise. `d2w`
