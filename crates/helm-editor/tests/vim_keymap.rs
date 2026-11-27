@@ -159,7 +159,6 @@ fn as_row(binding: &Binding) -> Row {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn vim_command_ids_are_the_documented_ones() {
     let mut expected: Vec<&str> = MOTIONS
         .iter()
@@ -199,7 +198,6 @@ fn vim_command_ids_are_the_documented_ones() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn with_vim_commands_holds_every_command() {
     let registry = CommandRegistry::with_vim_commands();
     let ids: Vec<&str> = registry.commands().map(|c| c.id.as_str()).collect();
@@ -224,7 +222,6 @@ fn with_vim_commands_holds_every_command() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn the_keymap_has_vims_modes() {
     let keymap = vim::keymap();
     assert_eq!(keymap.name(), "vim");
@@ -262,7 +259,6 @@ fn the_keymap_has_vims_modes() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn the_keymap_has_exactly_the_documented_bindings() {
     let keymap = vim::keymap();
     let mut actual: Vec<Row> = keymap.bindings().iter().map(as_row).collect();
@@ -275,7 +271,6 @@ fn the_keymap_has_exactly_the_documented_bindings() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn every_bound_command_is_registered() {
     let registry = CommandRegistry::with_vim_commands();
     for binding in vim::keymap().bindings() {
@@ -310,7 +305,6 @@ fn named(key: Key) -> KeyEvent {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn each_motion_resolves_in_each_mode_it_is_bound_in() {
     let d = Dispatcher::new(CommandRegistry::with_vim_commands(), vim::keymap());
     for (keys, motion, select) in MOTIONS {
@@ -366,7 +360,6 @@ fn each_motion_resolves_in_each_mode_it_is_bound_in() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn switching_between_vscode_and_vim_applies_to_open_editors() {
     let mut d = Dispatcher::new(CommandRegistry::with_vim_commands(), vscode::keymap());
     let (mut set, mut e) = editor("abc");
@@ -395,7 +388,6 @@ fn switching_between_vscode_and_vim_applies_to_open_editors() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn closing_the_group_on_a_keymap_switch_keeps_undo_steps_apart() {
     // What `helm-ui` does on a switch: `set_keymap`, then `sync` and
     // `end_undo_group` on every open editor.

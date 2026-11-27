@@ -1,7 +1,7 @@
 //! T-108 acceptance tests: counts. Digits typed in a `Typing::Count` mode
-//! make a count in the `KeyState`, `Dispatcher::resolve_counted` hands it
-//! out with the command it goes with, and `CommandRegistry::run_counted`
-//! passes it to the command as `CommandContext::count`.
+//! make a count in the `KeyState`, `Dispatcher::resolve` puts it in the
+//! `CommandArgs::count` of the command it goes with, and
+//! `CommandRegistry::run` passes it to the command in its arguments.
 
 use helm_editor::{
     Binding, Command, CommandContext, CommandError, CommandId, CommandRegistry, Dispatcher, Editor,
@@ -87,6 +87,36 @@ fn dispatcher() -> (Dispatcher, KeyState) {
     (dispatcher, state)
 }
 
+/// `Dispatcher::resolve`, with the count a `Run` carries in its arguments
+/// taken out and returned beside the resolution.
+fn resolve_counted(
+    d: &Dispatcher,
+    state: &mut KeyState,
+    event: &KeyEvent,
+    contexts: &[&str],
+) -> (Resolution, Option<usize>) {
+    match d.resolve(state, event, contexts) {
+        Resolution::Run(mut invocation) => {
+            let count = invocation.args.count.take();
+            (Resolution::Run(invocation), count)
+        }
+        other => (other, None),
+    }
+}
+
+/// `CommandRegistry::run` of `invocation` with `count` in its arguments.
+fn run_counted(
+    registry: &CommandRegistry,
+    invocation: &Invocation,
+    count: Option<usize>,
+    editor: &mut Editor,
+    set: &mut BufferSet,
+) -> Result<(), CommandError> {
+    let mut invocation = invocation.clone();
+    invocation.args.count = count;
+    registry.run(&invocation, editor, set)
+}
+
 /// Resolves each keystroke of `keys` with `resolve_counted`, and returns
 /// every result.
 fn press(d: &Dispatcher, state: &mut KeyState, keys: &str) -> Vec<(Resolution, Option<usize>)> {
@@ -94,7 +124,7 @@ fn press(d: &Dispatcher, state: &mut KeyState, keys: &str) -> Vec<(Resolution, O
         .expect("valid keys")
         .as_slice()
         .iter()
-        .map(|&k| d.resolve_counted(state, &KeyEvent::new(k), &[]))
+        .map(|&k| resolve_counted(d, state, &KeyEvent::new(k), &[]))
         .collect()
 }
 
@@ -105,7 +135,7 @@ fn last(d: &Dispatcher, state: &mut KeyState, keys: &str) -> (Resolution, Option
 
 /// `t.count` types the count it was given, or `none`.
 fn type_count(cx: CommandContext<'_>) -> Result<(), CommandError> {
-    let text = cx.count.map_or("none".to_owned(), |n| n.to_string());
+    let text = cx.args.count.map_or("none".to_owned(), |n| n.to_string());
     cx.editor.insert(cx.set, &format!("{text};"))?;
     Ok(())
 }
@@ -139,7 +169,6 @@ fn text(set: &BufferSet, editor: &Editor) -> String {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn digits_make_a_count_that_goes_with_the_next_command() {
     let (d, mut state) = dispatcher();
     assert_eq!(state.count(), None);
@@ -155,38 +184,132 @@ fn digits_make_a_count_that_goes_with_the_next_command() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn resolve_gives_the_same_resolution_and_state() {
-    for keys in [
-        "3 w",
-        "1 0 w",
-        "0",
-        "2 d 3 w",
-        "d d",
-        "3 escape",
-        "3 q",
-        "g 3",
-        "3 g g",
-        "i 3 escape",
-        "v 1",
-        "3 v w",
-        "ctrl-3",
-        "2 d c",
-    ] {
-        let (d, mut counted) = dispatcher();
-        let mut plain = d.key_state();
-        for &k in KeySequence::parse(keys).unwrap().as_slice() {
-            let event = KeyEvent::new(k);
-            let (a, _) = d.resolve_counted(&mut counted, &event, &[]);
-            let b = d.resolve(&mut plain, &event, &[]);
-            assert_eq!(a, b, "{keys}");
-            assert_eq!(counted, plain, "{keys}");
-        }
+    use Resolution::{Cancelled, Done, Pending, Unbound};
+    // A `Run` with the count it carries in its arguments.
+    let run = |command: &str, motion: Option<&str>, count: Option<usize>| {
+        let mut invocation = Invocation::new(command);
+        invocation.args.motion = motion.map(CommandId::from);
+        invocation.args.count = count;
+        Resolution::Run(invocation)
+    };
+    // Each key history: what each key resolves to, then the state's mode,
+    // count and operator after the last key. No chord is left pending.
+    type Case = (
+        &'static str,
+        Vec<Resolution>,
+        &'static str,
+        Option<usize>,
+        Option<&'static str>,
+    );
+    let cases: [Case; 14] = [
+        (
+            "3 w",
+            vec![Pending, run("t.word", None, Some(3))],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "1 0 w",
+            vec![Pending, Pending, run("t.word", None, Some(10))],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "0",
+            vec![run("t.line_start", None, None)],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "2 d 3 w",
+            vec![
+                Pending,
+                Pending,
+                Pending,
+                run("t.delete", Some("t.word"), Some(6)),
+            ],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "d d",
+            vec![Pending, run("t.delete", Some("t.line"), None)],
+            "normal",
+            None,
+            None,
+        ),
+        ("3 escape", vec![Pending, Cancelled], "normal", None, None),
+        ("3 q", vec![Pending, Cancelled], "normal", None, None),
+        (
+            "g 3",
+            vec![Pending, run("t.g_three", None, None)],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "3 g g",
+            vec![Pending, Pending, run("t.top", None, Some(3))],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "i 3 escape",
+            vec![Done, Resolution::Run(Invocation::insert("3")), Done],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "v 1",
+            vec![Done, run("t.one", None, None)],
+            "ignore",
+            None,
+            None,
+        ),
+        ("3 v w", vec![Pending, Done, Unbound], "ignore", None, None),
+        (
+            "ctrl-3",
+            vec![run("t.ctrl_three", None, None)],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "2 d c",
+            vec![Pending, Pending, Cancelled],
+            "normal",
+            None,
+            None,
+        ),
+    ];
+    for (keys, expected, mode, count, operator) in cases {
+        let (d, mut state) = dispatcher();
+        let resolutions: Vec<Resolution> = KeySequence::parse(keys)
+            .unwrap()
+            .as_slice()
+            .iter()
+            .map(|&k| d.resolve(&mut state, &KeyEvent::new(k), &[]))
+            .collect();
+        assert_eq!(resolutions, expected, "{keys}");
+        assert_eq!(state.mode().as_str(), mode, "{keys}");
+        assert_eq!(state.count(), count, "{keys}");
+        assert_eq!(
+            state.operator(),
+            operator.map(CommandId::from).as_ref(),
+            "{keys}"
+        );
+        assert_eq!(state.pending(), [], "{keys}");
     }
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn zero_is_a_motion_alone_and_a_digit_after_a_count() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "0"), (runs("t.line_start"), None));
@@ -198,7 +321,6 @@ fn zero_is_a_motion_alone_and_a_digit_after_a_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn digits_beat_bindings_in_a_counting_mode() {
     let (d, mut state) = dispatcher();
     // `1` is bound in normal mode, but a counting mode counts it.
@@ -208,13 +330,12 @@ fn digits_beat_bindings_in_a_counting_mode() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn only_counting_modes_count() {
     let (d, mut state) = dispatcher();
     // Insert mode types digits.
     press(&d, &mut state, "i");
     assert_eq!(state.mode().as_str(), "insert");
-    let (resolution, count) = d.resolve_counted(&mut state, &event("3"), &[]);
+    let (resolution, count) = resolve_counted(&d, &mut state, &event("3"), &[]);
     assert_eq!(resolution, Resolution::Run(Invocation::insert("3")));
     assert_eq!((count, state.count()), (None, None));
     // An ignoring mode runs its binding on `1` and drops other digits.
@@ -236,7 +357,6 @@ fn only_counting_modes_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_counting_mode_types_nothing() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "q"), (Resolution::Unbound, None));
@@ -244,7 +364,6 @@ fn a_counting_mode_types_nothing() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn digits_with_modifiers_are_keys() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "ctrl-3"), (runs("t.ctrl_three"), None));
@@ -258,7 +377,6 @@ fn digits_with_modifiers_are_keys() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_count_waits_through_a_chord() {
     let (d, mut state) = dispatcher();
     assert_eq!(
@@ -279,7 +397,6 @@ fn a_count_waits_through_a_chord() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn operator_counts_multiply() {
     let cases: [(&str, Option<usize>); 6] = [
         ("d w", None),
@@ -314,7 +431,6 @@ fn operator_counts_multiply() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_count_before_an_operator_moves_onto_it() {
     let (d, mut state) = dispatcher();
     press(&d, &mut state, "2 d");
@@ -335,7 +451,6 @@ fn a_count_before_an_operator_moves_onto_it() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cancelling_drops_the_count() {
     let (d, mut state) = dispatcher();
     // An unbound key and Escape cancel a count, and are dropped.
@@ -360,7 +475,6 @@ fn cancelling_drops_the_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_mode_switching_run_takes_the_count() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "4 a"), (runs("t.append"), Some(4)));
@@ -368,7 +482,6 @@ fn a_mode_switching_run_takes_the_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cancel_drops_the_count_and_says_so() {
     let (d, mut state) = dispatcher();
     assert!(!state.cancel());
@@ -384,7 +497,6 @@ fn cancel_drops_the_count_and_says_so() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn switching_keymaps_drops_the_count() {
     let (mut d, mut state) = dispatcher();
     press(&d, &mut state, "4");
@@ -398,7 +510,6 @@ fn switching_keymaps_drops_the_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn huge_counts_saturate() {
     let (d, mut state) = dispatcher();
     let nines = vec!["9"; 40].join(" ");
@@ -415,7 +526,6 @@ fn huge_counts_saturate() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn dispatch_passes_the_count_to_the_command() {
     let (d, mut state) = dispatcher();
     let (mut set, mut editor) = setup("");
@@ -429,21 +539,17 @@ fn dispatch_passes_the_count_to_the_command() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn run_counted_passes_the_count_and_run_passes_none() {
     let registry = registry();
     let (mut set, mut editor) = setup("");
     let invocation = Invocation::new("t.count");
-    registry
-        .run_counted(&invocation, Some(7), &mut editor, &mut set)
-        .unwrap();
+    run_counted(&registry, &invocation, Some(7), &mut editor, &mut set).unwrap();
     registry.run(&invocation, &mut editor, &mut set).unwrap();
-    registry
-        .run_counted(&invocation, None, &mut editor, &mut set)
-        .unwrap();
+    run_counted(&registry, &invocation, None, &mut editor, &mut set).unwrap();
     assert_eq!(text(&set, &editor), "7;none;none;");
     assert_eq!(
-        registry.run_counted(
+        run_counted(
+            &registry,
             &Invocation::new("t.missing"),
             Some(2),
             &mut editor,

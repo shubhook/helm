@@ -174,7 +174,6 @@ fn table(rows: &[(&str, &str, &str)]) {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn v_selects_the_char_under_each_cursor() {
     table(&[
         ("a|bc", "v", "a^b|c"),
@@ -196,7 +195,6 @@ fn v_selects_the_char_under_each_cursor() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn motions_move_the_visual_cursor_and_keep_the_anchor() {
     table(&[
         ("a|bcd", "vl", "a^bc|d"),
@@ -217,7 +215,6 @@ fn motions_move_the_visual_cursor_and_keep_the_anchor() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn o_swaps_the_ends() {
     table(&[
         ("a|bcd", "vllo", "a|bcd^"),
@@ -228,7 +225,6 @@ fn o_swaps_the_ends() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn escape_and_v_leave_visual_mode_on_the_visual_cursor() {
     table(&[
         ("a|bcd", "vl<esc>", "ab|cd"),
@@ -244,7 +240,6 @@ fn escape_and_v_leave_visual_mode_on_the_visual_cursor() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn d_and_x_delete_the_selection() {
     table(&[
         ("a|bcd", "vld", "a|d"),
@@ -262,7 +257,6 @@ fn d_and_x_delete_the_selection() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn c_and_s_change_the_selection() {
     table(&[
         ("a|bcd", "vlcX<esc>", "a|Xd"),
@@ -276,7 +270,6 @@ fn c_and_s_change_the_selection() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn visual_line_deletes_and_changes_whole_lines() {
     table(&[
         ("a\n|bc\nd", "Vd", "a\n|d"),
@@ -300,7 +293,6 @@ fn visual_line_deletes_and_changes_whole_lines() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn v_and_capital_v_switch_between_the_visual_modes() {
     table(&[
         ("|ab\ncd", "vjVd", "|"),
@@ -316,7 +308,6 @@ fn v_and_capital_v_switch_between_the_visual_modes() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_visual_edit_undoes_to_a_cursor_where_it_began() {
     table(&[
         ("a|bcd", "vldu", "a|bcd"),
@@ -328,7 +319,6 @@ fn a_visual_edit_undoes_to_a_cursor_where_it_began() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn counts_work_in_visual_modes() {
     table(&[
         ("|abcdef", "v2ld", "|def"),
@@ -341,7 +331,6 @@ fn counts_work_in_visual_modes() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn unbound_keys_do_nothing_in_visual_modes() {
     for keys in ["vq", "Vq", "vz", "Vi"] {
         let mut v = Vim::new("a|bc");
@@ -357,7 +346,6 @@ fn unbound_keys_do_nothing_in_visual_modes() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn the_empty_last_line_is_never_a_visual_end() {
     table(&[
         // The visual cursor stops on the line before the empty last line.

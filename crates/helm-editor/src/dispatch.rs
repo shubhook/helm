@@ -5,7 +5,7 @@ use helm_text::BufferSet;
 
 use crate::{
     Action, Binding, CommandArgs, CommandError, CommandId, CommandRegistry, Editor, Invocation,
-    KeyEvent, Keymap, Keystroke, ModeId, Typing,
+    Key, KeyEvent, Keymap, Keystroke, ModeId, Modifiers, Typing,
 };
 
 /// One editor's input state: its mode, the keys of a chord typed so far,
@@ -20,8 +20,11 @@ pub struct KeyState {
     mode: ModeId,
     /// The keys of a chord typed so far. Empty when no chord is pending.
     pending: Vec<Keystroke>,
-    /// The pending operator, and the mode it was set in.
-    operator: Option<(CommandId, ModeId)>,
+    /// The pending operator, the mode it was set in, and the count typed
+    /// before it.
+    operator: Option<(CommandId, ModeId, Option<usize>)>,
+    /// The count typed so far, in a counting mode.
+    count: Option<usize>,
     /// The dispatcher's keymap generation this state last synced to.
     generation: u64,
 }
@@ -40,7 +43,7 @@ impl KeyState {
 
     /// The pending operator, if one is held.
     pub fn operator(&self) -> Option<&CommandId> {
-        self.operator.as_ref().map(|(command, _)| command)
+        self.operator.as_ref().map(|(command, _, _)| command)
     }
 
     /// The count typed so far in a [`Typing::Count`] mode (T-108), or
@@ -49,7 +52,7 @@ impl KeyState {
     /// `None` until another digit comes. `helm-ui` shows it in the status
     /// bar while it waits for the next key.
     pub fn count(&self) -> Option<usize> {
-        todo!()
+        self.count
     }
 
     /// Drops the pending chord, the pending operator and the pending count
@@ -59,13 +62,14 @@ impl KeyState {
     /// focus or the user clicks in it.
     pub fn cancel(&mut self) -> bool {
         let chord = !self.pending.is_empty();
+        let count = self.count.take().is_some();
         self.pending.clear();
         match self.operator.take() {
-            Some((_, mode)) => {
+            Some((_, mode, _)) => {
                 self.mode = mode;
                 true
             }
-            None => chord,
+            None => chord || count,
         }
     }
 }
@@ -154,6 +158,7 @@ impl Dispatcher {
             mode: self.keymap.initial_mode().clone(),
             pending: Vec::new(),
             operator: None,
+            count: None,
             generation: self.generation,
         }
     }
@@ -198,13 +203,13 @@ impl Dispatcher {
     ///    over one without, then the one added later. The pending chord
     ///    clears, and the winner acts:
     ///    - [`Action::Run`](crate::Action::Run) with no operator pending:
-    ///      `Run` of the command. The pending count goes with it, as
-    ///      [`resolve_counted`](Self::resolve_counted) says, and clears.
+    ///      `Run` of the command. The pending count goes with it as its
+    ///      [`count`](crate::CommandArgs::count), and clears.
     ///    - `Action::Run` with an operator pending: `Run` of the operator,
     ///      with the binding's command as its
-    ///      [`motion`](crate::CommandArgs::motion). The operator and the
-    ///      counts clear and the mode goes back to the one the operator was
-    ///      set in.
+    ///      [`motion`](crate::CommandArgs::motion) and the counts as its
+    ///      `count` (see "Counts" below). The operator and the counts clear
+    ///      and the mode goes back to the one the operator was set in.
     ///    - [`Action::Operator`](crate::Action::Operator) with no operator
     ///      pending: the command becomes the pending operator, set in mode
     ///      `M`, and the pending count moves onto it: `Pending`.
@@ -230,11 +235,37 @@ impl Dispatcher {
     /// Mode changes happen here, before the caller runs the returned
     /// command, and stand even if the command then fails.
     ///
-    /// This is [`resolve_counted`](Self::resolve_counted) without the
-    /// count.
+    /// # Counts (T-108)
+    ///
+    /// Only a `Run` carries a count, in its invocation's
+    /// [`CommandArgs::count`](crate::CommandArgs::count). It is `None` when
+    /// no digits were typed before it. For a `Run` of a pending operator it
+    /// is the count typed before the operator times the count typed after
+    /// it, or whichever one was typed, saturating at `usize::MAX`. So in
+    /// Vim's keymap `2 d 3 w` gives 6, `d 3 w` gives 3 and `d w` gives
+    /// `None`. A count survives a chord: `1 2 g g` gives 12. `helm-ui` reads
+    /// it from the invocation for the ids it runs itself.
     pub fn resolve(&self, state: &mut KeyState, event: &KeyEvent, contexts: &[&str]) -> Resolution {
         self.sync(state);
         let keystroke = event.keystroke;
+
+        // Rule 0. A keymap with no counting mode skips it with one check.
+        if self.keymap.counts()
+            && state.pending.is_empty()
+            && let Key::Char(c) = keystroke.key()
+            && keystroke.modifiers() == Modifiers::NONE
+            && let Some(digit) = c.to_digit(10)
+            && (digit != 0 || state.count.is_some())
+            && self
+                .keymap
+                .mode(state.mode.as_str())
+                .is_some_and(|mode| mode.typing == Typing::Count)
+        {
+            let count = state.count.unwrap_or(0).saturating_mul(10);
+            state.count = Some(count.saturating_add(digit as usize));
+            return Resolution::Pending;
+        }
+
         let depth = state.pending.len();
         let first = state.pending.first().copied().unwrap_or(keystroke);
 
@@ -269,14 +300,25 @@ impl Dispatcher {
             state.pending.clear();
             let resolution = match &binding.action {
                 Some(Action::Run(command)) => match state.operator.take() {
-                    None => Resolution::Run(Invocation::new(command.clone())),
-                    Some((operator, mode)) => {
+                    None => Resolution::Run(Invocation {
+                        command: command.clone(),
+                        args: CommandArgs {
+                            count: state.count.take(),
+                            ..CommandArgs::default()
+                        },
+                    }),
+                    Some((operator, mode, before)) => {
                         state.mode = mode;
+                        let count = match (before, state.count.take()) {
+                            (Some(before), Some(after)) => Some(before.saturating_mul(after)),
+                            (before, after) => before.or(after),
+                        };
                         Resolution::Run(Invocation {
                             command: operator,
                             args: CommandArgs {
                                 text: None,
                                 motion: Some(command.clone()),
+                                count,
                             },
                         })
                     }
@@ -286,7 +328,8 @@ impl Dispatcher {
                     return Resolution::Cancelled;
                 }
                 Some(Action::Operator(command)) => {
-                    state.operator = Some((command.clone(), state.mode.clone()));
+                    let count = state.count.take();
+                    state.operator = Some((command.clone(), state.mode.clone(), count));
                     Resolution::Pending
                 }
                 None => {
@@ -300,8 +343,11 @@ impl Dispatcher {
             return resolution;
         }
 
-        // Rule 3.
-        if state.cancel() {
+        // Rule 3. Most keys reach here with nothing pending, and then
+        // `cancel` would change nothing, so it is skipped.
+        if (!state.pending.is_empty() || state.operator.is_some() || state.count.is_some())
+            && state.cancel()
+        {
             return Resolution::Cancelled;
         }
 
@@ -319,39 +365,10 @@ impl Dispatcher {
         }
     }
 
-    /// [`resolve`](Self::resolve), and the count that goes with a
-    /// [`Resolution::Run`] (T-108). The resolution and the change to
-    /// `state` are exactly what `resolve` gives for the same state and
-    /// event.
-    ///
-    /// The count is `None` for every resolution but `Run`, and for a `Run`
-    /// with no digits typed before it. For a `Run` of a pending operator it
-    /// is the count typed before the operator times the count typed after
-    /// it, or whichever one was typed, saturating at `usize::MAX`. So in
-    /// Vim's keymap `2 d 3 w` gives 6, `d 3 w` gives 3 and `d w` gives
-    /// `None`. A count survives a chord: `1 2 g g` gives 12.
-    ///
-    /// `helm-ui` uses this for the ids it runs itself, and passes the count
-    /// to [`CommandRegistry::run_counted`] for the rest, as
-    /// [`dispatch`](Self::dispatch) does.
-    #[expect(
-        unused_variables,
-        reason = "T-108 interface stub; the implementation deletes this"
-    )]
-    pub fn resolve_counted(
-        &self,
-        state: &mut KeyState,
-        event: &KeyEvent,
-        contexts: &[&str],
-    ) -> (Resolution, Option<usize>) {
-        todo!()
-    }
-
     /// [`resolve`](Self::resolve), then, for [`Resolution::Run`], runs the
-    /// invocation on `editor` and `set` with
-    /// [`CommandRegistry::run_counted`], passing the count
-    /// [`resolve_counted`](Self::resolve_counted) gives (T-108). Returns
-    /// the resolution, or the command's error.
+    /// invocation on `editor` and `set` with [`CommandRegistry::run`], so
+    /// the command gets the invocation's count (T-108). Returns the
+    /// resolution, or the command's error.
     pub fn dispatch(
         &self,
         state: &mut KeyState,

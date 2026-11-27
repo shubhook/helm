@@ -265,9 +265,9 @@ impl<'a> Text<'a> {
     }
 
     /// What `d{key}` deletes from `p`: a byte range and whether it was
-    /// linewise. `None` when nothing is deleted. `Err` for `de` and `dE`
-    /// where `e` can't move: the spec leaves that to Khakha (finding 2 of
-    /// the council round), so the property doesn't check it.
+    /// linewise. `None` when nothing is deleted. Always `Ok`: an `e` or `E`
+    /// that can't move ends on the char under the cursor, as Khakha's
+    /// answer to question 3 of PR #37 says.
     fn delete(
         &self,
         p: usize,
@@ -294,9 +294,6 @@ impl<'a> Text<'a> {
             }
             "e" | "E" => {
                 let t = self.target(p, key, count).unwrap();
-                if t == p {
-                    return Err(());
-                }
                 return Ok(Some((p, self.next(t), false)));
             }
             "$" => {
@@ -475,7 +472,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn motions_match_the_oracle_on_long_lines(
         text in text(),
         start in any::<Index>(),
@@ -491,7 +487,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn d_deletes_the_range_the_oracle_gives(
         text in text(),
         start in any::<Index>(),
@@ -524,7 +519,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn visual_ends_match_the_oracle(
         text in text(),
         start in any::<Index>(),
@@ -558,7 +552,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn dd_at_cursors_on_touching_lines_is_one_counted_dd(
         lines in prop::collection::vec("[a-c \t中]{0,4}", 1..8),
         crlf in any::<bool>(),
@@ -595,7 +588,6 @@ fn long_text() -> String {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn every_motion_matches_the_oracle_across_chunks() {
     let text = long_text();
     assert!(text.len() > 5000);

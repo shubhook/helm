@@ -76,9 +76,9 @@
 //! # Counts and undo groups (T-108)
 //!
 //! In a [`Typing::Count`] mode, digits make a count in the [`KeyState`].
-//! [`Dispatcher::resolve_counted`] hands it out with the command it goes
-//! with, and [`CommandRegistry::run_counted`] passes it to the command as
-//! [`CommandContext::count`]. [`Editor::begin_undo_group`] and
+//! [`Dispatcher::resolve`] puts it in the [`CommandArgs::count`] of the
+//! command it goes with, and the command reads it from
+//! [`CommandContext::args`]. [`Editor::begin_undo_group`] and
 //! [`Editor::end_undo_group`] make a run of edits one undo step, which is
 //! how Vim's insert mode undoes. The [`vim`] module docs hold Vim's rules,
 //! and [`CommandRegistry::with_vim_commands`] holds every command both
