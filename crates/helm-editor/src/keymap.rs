@@ -311,6 +311,7 @@ impl Keymap {
 
     /// Every binding whose keys start with `first`, in the order they were
     /// added.
+    #[inline]
     pub(crate) fn bindings_starting_with(
         &self,
         first: Keystroke,
