@@ -179,7 +179,6 @@ fn table(rows: &[(&str, &str, &str)]) {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn h_and_l_move_within_the_line() {
     table(&[
         ("ab|c", "h", "a|bc"),
@@ -198,7 +197,6 @@ fn h_and_l_move_within_the_line() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn counts_repeat_h_and_l_up_to_the_line_ends() {
     table(&[
         ("|abcdef", "3l", "abc|def"),
@@ -211,7 +209,6 @@ fn counts_repeat_h_and_l_up_to_the_line_ends() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn j_and_k_keep_the_column_on_a_char() {
     table(&[
         ("a|bc\nde\nfgh", "j", "abc\nd|e\nfgh"),
@@ -227,7 +224,6 @@ fn j_and_k_keep_the_column_on_a_char() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn j_and_k_keep_a_goal_column_through_short_lines() {
     table(&[
         ("ab|cd\nx\nefgh", "jj", "abcd\nx\nef|gh"),
@@ -239,7 +235,6 @@ fn j_and_k_keep_a_goal_column_through_short_lines() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn counts_move_j_and_k_by_lines_up_to_the_ends() {
     table(&[
         ("|a\nb\nc\nd", "2j", "a\nb\n|c\nd"),
@@ -250,7 +245,6 @@ fn counts_move_j_and_k_by_lines_up_to_the_ends() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn w_goes_to_the_next_word_start() {
     table(&[
         ("|foo bar", "w", "foo |bar"),
@@ -271,7 +265,6 @@ fn w_goes_to_the_next_word_start() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn b_goes_to_the_previous_word_start() {
     table(&[
         ("foo |bar", "b", "|foo bar"),
@@ -289,7 +282,6 @@ fn b_goes_to_the_previous_word_start() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn e_goes_to_the_end_of_the_word() {
     table(&[
         ("|foo bar", "e", "fo|o bar"),
@@ -304,7 +296,6 @@ fn e_goes_to_the_end_of_the_word() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn big_words_split_only_at_blanks() {
     table(&[
         ("|foo.bar baz", "W", "foo.bar |baz"),
@@ -316,7 +307,6 @@ fn big_words_split_only_at_blanks() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn zero_caret_and_dollar() {
     table(&[
         ("  a|bc", "0", "|  abc"),
@@ -333,7 +323,6 @@ fn zero_caret_and_dollar() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn gg_and_g_go_to_a_line_and_its_first_non_blank() {
     table(&[
         ("a\n  b\n|c", "gg", "|a\n  b\nc"),
@@ -348,7 +337,6 @@ fn gg_and_g_go_to_a_line_and_its_first_non_blank() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_cursor_left_past_the_line_end_settles_first() {
     // An offset at the end of a line's text (left by another keymap) is
     // moved onto the last char before the motion runs.
@@ -360,7 +348,6 @@ fn a_cursor_left_past_the_line_end_settles_first() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn dw_deletes_to_the_next_word_but_not_past_the_line_end() {
     table(&[
         ("|foo bar", "dw", "|bar"),
@@ -379,7 +366,6 @@ fn dw_deletes_to_the_next_word_but_not_past_the_line_end() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn db_and_de() {
     table(&[
         ("foo |bar", "db", "|bar"),
@@ -402,7 +388,6 @@ fn db_and_de() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn d_with_line_motions_within_a_line() {
     table(&[
         ("a|bc\nd", "d$", "|a\nd"),
@@ -420,7 +405,6 @@ fn d_with_line_motions_within_a_line() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn x_and_capital_x_delete_chars_within_the_line() {
     table(&[
         ("ab|c", "x", "a|b"),
@@ -436,7 +420,6 @@ fn x_and_capital_x_delete_chars_within_the_line() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn dd_deletes_whole_lines() {
     table(&[
         ("a\n|b\nc", "dd", "a\n|c"),
@@ -453,7 +436,6 @@ fn dd_deletes_whole_lines() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn d_with_j_k_gg_and_g_deletes_lines() {
     table(&[
         ("|a\nb\nc", "dj", "|c"),
@@ -468,7 +450,6 @@ fn d_with_j_k_gg_and_g_deletes_lines() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_huge_count_deletes_only_what_is_there() {
     let nines = "9".repeat(40);
     table(&[
@@ -480,7 +461,6 @@ fn a_huge_count_deletes_only_what_is_there() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn an_operator_waits_in_its_pending_mode() {
     let mut v = Vim::new("|foo bar");
     assert_eq!(v.keys("d"), [Resolution::Pending]);
@@ -498,7 +478,6 @@ fn an_operator_waits_in_its_pending_mode() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cw_changes_to_the_end_of_the_word() {
     table(&[
         ("|foo bar", "cwxy<esc>", "x|y bar"),
@@ -512,7 +491,6 @@ fn cw_changes_to_the_end_of_the_word() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cc_s_and_c_change_lines_and_chars() {
     table(&[
         ("a\n  |b c\nd", "ccX<esc>", "a\n|X\nd"),
@@ -529,7 +507,6 @@ fn cc_s_and_c_change_lines_and_chars() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn i_a_capital_i_and_capital_a_start_typing() {
     table(&[
         ("a|bc", "iX<esc>", "a|Xbc"),
@@ -546,7 +523,6 @@ fn i_a_capital_i_and_capital_a_start_typing() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn o_and_capital_o_open_a_line() {
     table(&[
         ("a|bc\nd", "oX<esc>", "abc\n|X\nd"),
@@ -559,7 +535,6 @@ fn o_and_capital_o_open_a_line() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn insert_mode_types_and_edits() {
     table(&[
         ("|ab", "iX<cr>Y<bs>Z<esc>", "X\n|Zab"),
@@ -576,7 +551,6 @@ fn insert_mode_types_and_edits() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn u_undoes_a_whole_insert_or_change() {
     table(&[
         ("a|bc", "iXYZ<esc>u", "a|bc"),
@@ -592,7 +566,6 @@ fn u_undoes_a_whole_insert_or_change() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn ctrl_r_redoes() {
     table(&[
         ("a|bc", "iXYZ<esc>u<c-r>", "aXYZ|bc"),
@@ -603,7 +576,6 @@ fn ctrl_r_redoes() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn every_cursor_runs_the_command() {
     table(&[
         ("|foo bar |baz qux", "dw", "|bar |qux"),
@@ -622,7 +594,6 @@ fn every_cursor_runs_the_command() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn counted_cw_skips_ahead_only_on_its_first_step() {
     // Checked against Vim 9.1 with `-u NONE`.
     table(&[
@@ -635,7 +606,6 @@ fn counted_cw_skips_ahead_only_on_its_first_step() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn c_with_a_motion_that_finds_nothing_still_enters_insert() {
     // Vim does this for `ch` and `c0` at the line's start, and beeps for
     // `cj` and `ck` at the last and first lines; Helm types in all four.
@@ -654,7 +624,6 @@ fn c_with_a_motion_that_finds_nothing_still_enters_insert() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_counted_dollar_that_ends_on_an_empty_line() {
     // Checked against Vim 9.1 with `-u NONE`.
     table(&[
@@ -671,7 +640,6 @@ fn a_counted_dollar_that_ends_on_an_empty_line() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cursors_on_touching_lines_delete_them_like_one_count() {
     table(&[
         ("ab\n|cd\n|ef", "dd", "|ab"),
@@ -685,7 +653,6 @@ fn cursors_on_touching_lines_delete_them_like_one_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn more_word_and_line_cases() {
     // Checked against Vim 9.1 with `-u NONE`.
     table(&[
@@ -701,7 +668,6 @@ fn more_word_and_line_cases() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn undoing_o_and_capital_o_puts_the_cursor_back_where_it_was() {
     // Checked against Vim 9.1 with `-u NONE`. Undoing `A` goes to the
     // line's last char, where the change began.
@@ -713,7 +679,6 @@ fn undoing_o_and_capital_o_puts_the_cursor_back_where_it_was() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn vim_line_on_its_own_and_operators_without_a_vim_motion() {
     use helm_editor::{CommandId, Invocation, vim_commands};
     let mut v = Vim::new("|a\n  b\n  c\nd");

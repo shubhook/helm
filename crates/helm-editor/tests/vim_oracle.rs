@@ -472,7 +472,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn motions_match_the_oracle_on_long_lines(
         text in text(),
         start in any::<Index>(),
@@ -488,7 +487,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn d_deletes_the_range_the_oracle_gives(
         text in text(),
         start in any::<Index>(),
@@ -521,7 +519,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn visual_ends_match_the_oracle(
         text in text(),
         start in any::<Index>(),
@@ -555,7 +552,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn dd_at_cursors_on_touching_lines_is_one_counted_dd(
         lines in prop::collection::vec("[a-c \t中]{0,4}", 1..8),
         crlf in any::<bool>(),
@@ -592,7 +588,6 @@ fn long_text() -> String {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn every_motion_matches_the_oracle_across_chunks() {
     let text = long_text();
     assert!(text.len() > 5000);

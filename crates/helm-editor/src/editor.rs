@@ -11,6 +11,10 @@ use helm_text::{
 use crate::motion::{Reads, target, try_target};
 use crate::{EditorError, Motion, Selection, Selections};
 
+mod vim;
+
+pub(crate) use vim::{Entry, Operator};
+
 /// The selections on one buffer of a [`BufferSet`], and the commands that
 /// edit at every selection or add new ones.
 ///
@@ -146,6 +150,9 @@ pub struct Editor {
     /// Each selection's goal column, in chars, by index into `selections`,
     /// or empty when there are none. Only Up and Down set and keep them.
     goals: Vec<usize>,
+    /// The open undo group, if any, and the transaction its edits fold
+    /// into once its first edit has applied one.
+    group: Option<Option<TransactionId>>,
 }
 
 /// The selections just before and just after one transaction.
@@ -177,6 +184,7 @@ impl Editor {
             history: HashMap::new(),
             undone: Vec::new(),
             goals: Vec::new(),
+            group: None,
         }
     }
 
@@ -380,6 +388,7 @@ impl Editor {
     pub fn undo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.undo(self.buffer)?;
         self.goals.clear();
+        self.group = None;
         if let Some(record) = id.and_then(|id| self.history.get(&id)) {
             self.selections = record.before.clone();
             self.undone.push(record.id);
@@ -397,6 +406,7 @@ impl Editor {
     pub fn redo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.redo(self.buffer)?;
         self.goals.clear();
+        self.group = None;
         if let Some(record) = id.and_then(|id| self.history.get(&id)) {
             self.selections = record.after.clone();
             self.undone.retain(|&undone| undone != record.id);
@@ -501,18 +511,18 @@ impl Editor {
     /// is already open, it ends first and a new one starts, so the next
     /// edit is a new undo step.
     pub fn begin_undo_group(&mut self) {
-        todo!()
+        self.group = Some(None);
     }
 
     /// Closes the open undo group (T-108). Returns whether one was open.
     /// The next edit is a new undo step.
     pub fn end_undo_group(&mut self) -> bool {
-        todo!()
+        self.group.take().is_some()
     }
 
     /// Whether an undo group is open (T-108).
     pub fn in_undo_group(&self) -> bool {
-        todo!()
+        self.group.is_some()
     }
 }
 
@@ -612,7 +622,9 @@ impl Editor {
     }
 
     /// Applies `transaction`, which this editor built from `before`, and
-    /// moves to `after`.
+    /// moves to `after`. In an open undo group whose first edit is done,
+    /// amends the group's transaction instead, and applies a new one only
+    /// if `amend` refuses.
     fn apply(
         &mut self,
         set: &mut BufferSet,
@@ -620,14 +632,30 @@ impl Editor {
         before: Selections,
         after: Selections,
     ) -> TransactionId {
-        let id = set
-            .apply(transaction)
-            .expect("edits come from clamped selections in normal form, so they are valid");
+        // Both `apply` and `amend` drop redo, so this editor's undone
+        // records go either way.
         for undone in self.undone.drain(..) {
             self.history.remove(&undone);
         }
         self.selections = after.clone();
+        if let Some(Some(id)) = self.group
+            && set.amend(id, transaction.clone()).is_ok()
+        {
+            match self.history.get_mut(&id) {
+                Some(record) => record.after = after,
+                None => {
+                    self.history.insert(id, Record { id, before, after });
+                }
+            }
+            return id;
+        }
+        let id = set
+            .apply(transaction)
+            .expect("edits come from clamped selections in normal form, so they are valid");
         self.history.insert(id, Record { id, before, after });
+        if self.group.is_some() {
+            self.group = Some(Some(id));
+        }
         id
     }
 

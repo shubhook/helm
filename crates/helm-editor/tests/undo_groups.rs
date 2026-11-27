@@ -34,7 +34,6 @@ fn cursors(editor: &Editor) -> Vec<usize> {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_group_undoes_and_redoes_in_one_step() {
     let (mut set, mut e) = setup("ab", &[Selection::cursor(1)]);
     assert!(!e.in_undo_group());
@@ -63,7 +62,6 @@ fn a_group_undoes_and_redoes_in_one_step() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn every_edit_in_a_group_returns_the_groups_transaction() {
     let (mut set, mut e) = setup("", &[Selection::cursor(0)]);
     e.begin_undo_group();
@@ -85,7 +83,6 @@ fn every_edit_in_a_group_returns_the_groups_transaction() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn edits_outside_a_group_are_their_own_steps() {
     let (mut set, mut e) = setup("", &[Selection::cursor(0)]);
     e.insert(&mut set, "a").unwrap();
@@ -102,7 +99,6 @@ fn edits_outside_a_group_are_their_own_steps() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn an_empty_group_changes_nothing() {
     let (mut set, mut e) = setup("", &[Selection::cursor(0)]);
     e.insert(&mut set, "a").unwrap();
@@ -115,7 +111,6 @@ fn an_empty_group_changes_nothing() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn moving_and_setting_selections_keep_the_group_open() {
     let (mut set, mut e) = setup("ab", &[Selection::cursor(2)]);
     e.begin_undo_group();
@@ -138,7 +133,6 @@ fn moving_and_setting_selections_keep_the_group_open() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn undo_and_redo_end_the_group() {
     let (mut set, mut e) = setup("", &[Selection::cursor(0)]);
     e.insert(&mut set, "a").unwrap();
@@ -161,7 +155,6 @@ fn undo_and_redo_end_the_group() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn begin_while_open_starts_a_new_group() {
     let (mut set, mut e) = setup("", &[Selection::cursor(0)]);
     e.begin_undo_group();
@@ -179,7 +172,6 @@ fn begin_while_open_starts_a_new_group() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn an_edit_from_outside_starts_a_new_step_in_the_group() {
     let (mut set, mut e) = setup("ab", &[Selection::cursor(0)]);
     e.begin_undo_group();
@@ -204,7 +196,6 @@ fn an_edit_from_outside_starts_a_new_step_in_the_group() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_group_covers_every_cursor() {
     let (mut set, mut e) = setup(
         "a\r\nb\r\nc",
@@ -227,7 +218,6 @@ fn a_group_covers_every_cursor() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_group_drops_redo_like_any_edit() {
     let (mut set, mut e) = setup("", &[Selection::cursor(0)]);
     e.insert(&mut set, "a").unwrap();
@@ -243,7 +233,6 @@ fn a_group_drops_redo_like_any_edit() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn an_error_in_a_group_changes_nothing() {
     let (mut set, mut e) = setup("ab", &[Selection::cursor(1)]);
     e.begin_undo_group();
@@ -263,7 +252,6 @@ fn an_error_in_a_group_changes_nothing() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_failed_undo_leaves_the_group_open() {
     let mut set = BufferSet::new();
     let a = set.add(Buffer::from("a"));

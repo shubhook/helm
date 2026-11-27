@@ -357,7 +357,7 @@
 //! Undoing a visual edit leaves a cursor where the selection began, in
 //! normal mode, as `u` always does.
 
-use crate::Keymap;
+use crate::{Binding, Keymap, Mode, Typing, editor_commands as editor, vim_commands as ids};
 
 /// The keymap's name.
 pub const NAME: &str = "vim";
@@ -430,5 +430,137 @@ pub const CHANGE_PENDING: &str = "change_pending";
 /// cancels a pending count or operator, as
 /// [`Dispatcher::resolve`](crate::Dispatcher::resolve)'s rule 3 says.
 pub fn keymap() -> Keymap {
-    todo!()
+    /// The motion keys, with the command each runs in normal and the
+    /// pending modes, and in the visual modes.
+    const MOTIONS: [(&str, &str, &str); 15] = [
+        ("h", ids::LEFT, ids::SELECT_LEFT),
+        ("l", ids::RIGHT, ids::SELECT_RIGHT),
+        ("j", ids::DOWN, ids::SELECT_DOWN),
+        ("k", ids::UP, ids::SELECT_UP),
+        ("w", ids::NEXT_WORD, ids::SELECT_NEXT_WORD),
+        ("b", ids::PREV_WORD, ids::SELECT_PREV_WORD),
+        ("e", ids::WORD_END, ids::SELECT_WORD_END),
+        ("W", ids::NEXT_BIG_WORD, ids::SELECT_NEXT_BIG_WORD),
+        ("B", ids::PREV_BIG_WORD, ids::SELECT_PREV_BIG_WORD),
+        ("E", ids::BIG_WORD_END, ids::SELECT_BIG_WORD_END),
+        ("0", ids::LINE_START, ids::SELECT_LINE_START),
+        ("^", ids::FIRST_NON_BLANK, ids::SELECT_FIRST_NON_BLANK),
+        ("$", ids::LINE_END, ids::SELECT_LINE_END),
+        ("g g", ids::FIRST_LINE, ids::SELECT_FIRST_LINE),
+        ("G", ids::LAST_LINE, ids::SELECT_LAST_LINE),
+    ];
+    let run = |keys: &str, command: &str| Binding::run(keys, command).expect("the keys parse");
+    let switch = |keys: &str, mode: &str| Binding::switch_mode(keys, mode).expect("the keys parse");
+
+    let mut bindings = Vec::with_capacity(115);
+    for (keys, motion, _) in MOTIONS {
+        bindings.push(run(keys, motion).in_mode(NORMAL));
+    }
+    bindings.push(
+        Binding::operator("d", ids::DELETE)
+            .expect("the keys parse")
+            .in_mode(NORMAL)
+            .then_mode(DELETE_PENDING),
+    );
+    bindings.push(
+        Binding::operator("c", ids::CHANGE)
+            .expect("the keys parse")
+            .in_mode(NORMAL)
+            .then_mode(CHANGE_PENDING),
+    );
+    for (keys, command) in [
+        ("x", ids::DELETE_CHAR),
+        ("X", ids::DELETE_CHAR_BEFORE),
+        ("D", ids::DELETE_TO_LINE_END),
+        ("u", ids::UNDO),
+        ("ctrl-r", ids::REDO),
+    ] {
+        bindings.push(run(keys, command).in_mode(NORMAL));
+    }
+    for (keys, command) in [
+        ("C", ids::CHANGE_TO_LINE_END),
+        ("s", ids::SUBSTITUTE),
+        ("S", ids::SUBSTITUTE_LINE),
+        ("i", ids::INSERT),
+        ("a", ids::APPEND),
+        ("I", ids::INSERT_LINE_START),
+        ("A", ids::APPEND_LINE_END),
+        ("o", ids::OPEN_BELOW),
+        ("O", ids::OPEN_ABOVE),
+    ] {
+        bindings.push(run(keys, command).in_mode(NORMAL).then_mode(INSERT));
+    }
+    bindings.push(run("v", ids::VISUAL).in_mode(NORMAL).then_mode(VISUAL));
+    bindings.push(run("V", ids::VISUAL).in_mode(NORMAL).then_mode(VISUAL_LINE));
+
+    for (keys, motion, _) in MOTIONS {
+        bindings.push(run(keys, motion).in_mode(DELETE_PENDING));
+    }
+    bindings.push(run("d", ids::LINE).in_mode(DELETE_PENDING));
+    for (keys, motion, _) in MOTIONS {
+        bindings.push(run(keys, motion).in_mode(CHANGE_PENDING).then_mode(INSERT));
+    }
+    bindings.push(
+        run("c", ids::LINE)
+            .in_mode(CHANGE_PENDING)
+            .then_mode(INSERT),
+    );
+
+    for (mode, own, other_key, other, delete, change) in [
+        (
+            VISUAL,
+            "v",
+            "V",
+            VISUAL_LINE,
+            ids::DELETE_SELECTION,
+            ids::CHANGE_SELECTION,
+        ),
+        (
+            VISUAL_LINE,
+            "V",
+            "v",
+            VISUAL,
+            ids::DELETE_LINES,
+            ids::CHANGE_LINES,
+        ),
+    ] {
+        for (keys, _, select) in MOTIONS {
+            bindings.push(run(keys, select).in_mode(mode));
+        }
+        bindings.push(
+            run("escape", ids::EXIT_VISUAL)
+                .in_mode(mode)
+                .then_mode(NORMAL),
+        );
+        bindings.push(run(own, ids::EXIT_VISUAL).in_mode(mode).then_mode(NORMAL));
+        bindings.push(switch(other_key, other).in_mode(mode));
+        bindings.push(run("o", ids::SWAP_ENDS).in_mode(mode));
+        for keys in ["d", "x"] {
+            bindings.push(run(keys, delete).in_mode(mode).then_mode(NORMAL));
+        }
+        for keys in ["c", "s"] {
+            bindings.push(run(keys, change).in_mode(mode).then_mode(INSERT));
+        }
+    }
+
+    bindings.push(run("escape", ids::NORMAL).in_mode(INSERT).then_mode(NORMAL));
+    bindings.push(run("enter", editor::NEWLINE).in_mode(INSERT));
+    bindings.push(run("backspace", editor::DELETE_BACKWARD).in_mode(INSERT));
+    bindings.push(run("delete", editor::DELETE_FORWARD).in_mode(INSERT));
+
+    let modes = vec![
+        Mode::new(NORMAL, Typing::Count),
+        Mode::new(INSERT, Typing::Insert),
+        Mode::new(VISUAL, Typing::Count),
+        Mode::new(VISUAL_LINE, Typing::Count),
+        Mode::new(DELETE_PENDING, Typing::Count),
+        Mode::new(CHANGE_PENDING, Typing::Count),
+    ];
+    let mut keymap = Keymap::new(NAME, modes).expect("six modes, no duplicates");
+    for binding in bindings {
+        keymap
+            .bind(binding)
+            .expect("bindings name only the six modes");
+    }
+    keymap
 }

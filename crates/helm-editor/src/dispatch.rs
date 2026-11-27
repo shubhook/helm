@@ -5,7 +5,7 @@ use helm_text::BufferSet;
 
 use crate::{
     Action, Binding, CommandArgs, CommandError, CommandId, CommandRegistry, Editor, Invocation,
-    KeyEvent, Keymap, Keystroke, ModeId, Typing,
+    Key, KeyEvent, Keymap, Keystroke, ModeId, Modifiers, Typing,
 };
 
 /// One editor's input state: its mode, the keys of a chord typed so far,
@@ -20,8 +20,11 @@ pub struct KeyState {
     mode: ModeId,
     /// The keys of a chord typed so far. Empty when no chord is pending.
     pending: Vec<Keystroke>,
-    /// The pending operator, and the mode it was set in.
-    operator: Option<(CommandId, ModeId)>,
+    /// The pending operator, the mode it was set in, and the count typed
+    /// before it.
+    operator: Option<(CommandId, ModeId, Option<usize>)>,
+    /// The count typed so far, in a counting mode.
+    count: Option<usize>,
     /// The dispatcher's keymap generation this state last synced to.
     generation: u64,
 }
@@ -40,7 +43,7 @@ impl KeyState {
 
     /// The pending operator, if one is held.
     pub fn operator(&self) -> Option<&CommandId> {
-        self.operator.as_ref().map(|(command, _)| command)
+        self.operator.as_ref().map(|(command, _, _)| command)
     }
 
     /// The count typed so far in a [`Typing::Count`] mode (T-108), or
@@ -49,7 +52,7 @@ impl KeyState {
     /// `None` until another digit comes. `helm-ui` shows it in the status
     /// bar while it waits for the next key.
     pub fn count(&self) -> Option<usize> {
-        todo!()
+        self.count
     }
 
     /// Drops the pending chord, the pending operator and the pending count
@@ -59,13 +62,14 @@ impl KeyState {
     /// focus or the user clicks in it.
     pub fn cancel(&mut self) -> bool {
         let chord = !self.pending.is_empty();
+        let count = self.count.take().is_some();
         self.pending.clear();
         match self.operator.take() {
-            Some((_, mode)) => {
+            Some((_, mode, _)) => {
                 self.mode = mode;
                 true
             }
-            None => chord,
+            None => chord || count,
         }
     }
 }
@@ -154,6 +158,7 @@ impl Dispatcher {
             mode: self.keymap.initial_mode().clone(),
             pending: Vec::new(),
             operator: None,
+            count: None,
             generation: self.generation,
         }
     }
@@ -243,6 +248,23 @@ impl Dispatcher {
     pub fn resolve(&self, state: &mut KeyState, event: &KeyEvent, contexts: &[&str]) -> Resolution {
         self.sync(state);
         let keystroke = event.keystroke;
+
+        // Rule 0.
+        if state.pending.is_empty()
+            && let Key::Char(c) = keystroke.key()
+            && keystroke.modifiers() == Modifiers::NONE
+            && let Some(digit) = c.to_digit(10)
+            && (digit != 0 || state.count.is_some())
+            && self
+                .keymap
+                .mode(state.mode.as_str())
+                .is_some_and(|mode| mode.typing == Typing::Count)
+        {
+            let count = state.count.unwrap_or(0).saturating_mul(10);
+            state.count = Some(count.saturating_add(digit as usize));
+            return Resolution::Pending;
+        }
+
         let depth = state.pending.len();
         let first = state.pending.first().copied().unwrap_or(keystroke);
 
@@ -277,15 +299,25 @@ impl Dispatcher {
             state.pending.clear();
             let resolution = match &binding.action {
                 Some(Action::Run(command)) => match state.operator.take() {
-                    None => Resolution::Run(Invocation::new(command.clone())),
-                    Some((operator, mode)) => {
+                    None => Resolution::Run(Invocation {
+                        command: command.clone(),
+                        args: CommandArgs {
+                            count: state.count.take(),
+                            ..CommandArgs::default()
+                        },
+                    }),
+                    Some((operator, mode, before)) => {
                         state.mode = mode;
+                        let count = match (before, state.count.take()) {
+                            (Some(before), Some(after)) => Some(before.saturating_mul(after)),
+                            (before, after) => before.or(after),
+                        };
                         Resolution::Run(Invocation {
                             command: operator,
                             args: CommandArgs {
                                 text: None,
                                 motion: Some(command.clone()),
-                                count: None,
+                                count,
                             },
                         })
                     }
@@ -295,7 +327,8 @@ impl Dispatcher {
                     return Resolution::Cancelled;
                 }
                 Some(Action::Operator(command)) => {
-                    state.operator = Some((command.clone(), state.mode.clone()));
+                    let count = state.count.take();
+                    state.operator = Some((command.clone(), state.mode.clone(), count));
                     Resolution::Pending
                 }
                 None => {

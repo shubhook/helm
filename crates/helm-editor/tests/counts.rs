@@ -169,7 +169,6 @@ fn text(set: &BufferSet, editor: &Editor) -> String {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn digits_make_a_count_that_goes_with_the_next_command() {
     let (d, mut state) = dispatcher();
     assert_eq!(state.count(), None);
@@ -185,7 +184,6 @@ fn digits_make_a_count_that_goes_with_the_next_command() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn resolve_gives_the_same_resolution_and_state() {
     for keys in [
         "3 w",
@@ -216,7 +214,6 @@ fn resolve_gives_the_same_resolution_and_state() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn zero_is_a_motion_alone_and_a_digit_after_a_count() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "0"), (runs("t.line_start"), None));
@@ -228,7 +225,6 @@ fn zero_is_a_motion_alone_and_a_digit_after_a_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn digits_beat_bindings_in_a_counting_mode() {
     let (d, mut state) = dispatcher();
     // `1` is bound in normal mode, but a counting mode counts it.
@@ -238,7 +234,6 @@ fn digits_beat_bindings_in_a_counting_mode() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn only_counting_modes_count() {
     let (d, mut state) = dispatcher();
     // Insert mode types digits.
@@ -266,7 +261,6 @@ fn only_counting_modes_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_counting_mode_types_nothing() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "q"), (Resolution::Unbound, None));
@@ -274,7 +268,6 @@ fn a_counting_mode_types_nothing() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn digits_with_modifiers_are_keys() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "ctrl-3"), (runs("t.ctrl_three"), None));
@@ -288,7 +281,6 @@ fn digits_with_modifiers_are_keys() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_count_waits_through_a_chord() {
     let (d, mut state) = dispatcher();
     assert_eq!(
@@ -309,7 +301,6 @@ fn a_count_waits_through_a_chord() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn operator_counts_multiply() {
     let cases: [(&str, Option<usize>); 6] = [
         ("d w", None),
@@ -344,7 +335,6 @@ fn operator_counts_multiply() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_count_before_an_operator_moves_onto_it() {
     let (d, mut state) = dispatcher();
     press(&d, &mut state, "2 d");
@@ -365,7 +355,6 @@ fn a_count_before_an_operator_moves_onto_it() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cancelling_drops_the_count() {
     let (d, mut state) = dispatcher();
     // An unbound key and Escape cancel a count, and are dropped.
@@ -390,7 +379,6 @@ fn cancelling_drops_the_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn a_mode_switching_run_takes_the_count() {
     let (d, mut state) = dispatcher();
     assert_eq!(last(&d, &mut state, "4 a"), (runs("t.append"), Some(4)));
@@ -398,7 +386,6 @@ fn a_mode_switching_run_takes_the_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn cancel_drops_the_count_and_says_so() {
     let (d, mut state) = dispatcher();
     assert!(!state.cancel());
@@ -414,7 +401,6 @@ fn cancel_drops_the_count_and_says_so() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn switching_keymaps_drops_the_count() {
     let (mut d, mut state) = dispatcher();
     press(&d, &mut state, "4");
@@ -428,7 +414,6 @@ fn switching_keymaps_drops_the_count() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn huge_counts_saturate() {
     let (d, mut state) = dispatcher();
     let nines = vec!["9"; 40].join(" ");
@@ -445,7 +430,6 @@ fn huge_counts_saturate() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn dispatch_passes_the_count_to_the_command() {
     let (d, mut state) = dispatcher();
     let (mut set, mut editor) = setup("");
@@ -459,7 +443,6 @@ fn dispatch_passes_the_count_to_the_command() {
 }
 
 #[test]
-#[ignore = "T-108: not implemented yet"]
 fn run_counted_passes_the_count_and_run_passes_none() {
     let registry = registry();
     let (mut set, mut editor) = setup("");

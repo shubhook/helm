@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use helm_text::BufferSet;
 
-use crate::{Editor, EditorError, cursor_commands, editor_commands};
+use crate::{Editor, EditorError, cursor_commands, editor_commands, vim_commands};
 
 /// A command's id, such as `"editor.delete_backward"`. Keymaps, the
 /// keybindings file and the command palette name commands by id, so an id
@@ -184,7 +184,9 @@ impl CommandRegistry {
     /// between the two keymaps at runtime (ED-6). This is the registry
     /// `helm-ui` builds its dispatcher with.
     pub fn with_vim_commands() -> Self {
-        todo!()
+        let mut registry = Self::with_all_commands();
+        vim_commands::register_all(&mut registry);
+        registry
     }
 
     /// Adds `command`. Errors, and adds nothing, if its id isn't in the

@@ -198,7 +198,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn normal_mode_keeps_every_cursor_on_a_char(
         text in text(40),
         starts in prop::collection::vec(any::<Index>(), 1..4),
@@ -222,7 +221,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn a_count_moves_like_repeating_the_motion(
         text in text(40),
         start in any::<Index>(),
@@ -238,7 +236,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn an_insert_session_undoes_in_one_step(
         text in text(30),
         start in any::<Index>(),
@@ -263,7 +260,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn every_edit_undoes_to_the_text_before_it(
         text in text(40),
         starts in prop::collection::vec(any::<Index>(), 1..3),
@@ -292,7 +288,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn dd_matches_a_line_oracle(
         lines in prop::collection::vec("[a-c \t中😀]{0,5}", 1..8),
         crlf in any::<bool>(),
@@ -327,7 +322,6 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "T-108: not implemented yet"]
     fn a_visual_delete_deletes_what_was_selected(
         text in text(40),
         start in any::<Index>(),
