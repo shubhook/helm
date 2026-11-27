@@ -249,8 +249,9 @@ impl Dispatcher {
         self.sync(state);
         let keystroke = event.keystroke;
 
-        // Rule 0.
-        if state.pending.is_empty()
+        // Rule 0. A keymap with no counting mode skips it with one check.
+        if self.keymap.counts()
+            && state.pending.is_empty()
             && let Key::Char(c) = keystroke.key()
             && keystroke.modifiers() == Modifiers::NONE
             && let Some(digit) = c.to_digit(10)
@@ -342,8 +343,11 @@ impl Dispatcher {
             return resolution;
         }
 
-        // Rule 3.
-        if state.cancel() {
+        // Rule 3. Most keys reach here with nothing pending, and then
+        // `cancel` would change nothing, so it is skipped.
+        if (!state.pending.is_empty() || state.operator.is_some() || state.count.is_some())
+            && state.cancel()
+        {
             return Resolution::Cancelled;
         }
 
