@@ -185,31 +185,127 @@ fn digits_make_a_count_that_goes_with_the_next_command() {
 
 #[test]
 fn resolve_gives_the_same_resolution_and_state() {
-    for keys in [
-        "3 w",
-        "1 0 w",
-        "0",
-        "2 d 3 w",
-        "d d",
-        "3 escape",
-        "3 q",
-        "g 3",
-        "3 g g",
-        "i 3 escape",
-        "v 1",
-        "3 v w",
-        "ctrl-3",
-        "2 d c",
-    ] {
-        let (d, mut counted) = dispatcher();
-        let mut plain = d.key_state();
-        for &k in KeySequence::parse(keys).unwrap().as_slice() {
-            let event = KeyEvent::new(k);
-            let a = d.resolve(&mut counted, &event, &[]);
-            let b = d.resolve(&mut plain, &event, &[]);
-            assert_eq!(a, b, "{keys}");
-            assert_eq!(counted, plain, "{keys}");
-        }
+    use Resolution::{Cancelled, Done, Pending, Unbound};
+    // A `Run` with the count it carries in its arguments.
+    let run = |command: &str, motion: Option<&str>, count: Option<usize>| {
+        let mut invocation = Invocation::new(command);
+        invocation.args.motion = motion.map(CommandId::from);
+        invocation.args.count = count;
+        Resolution::Run(invocation)
+    };
+    // Each key history: what each key resolves to, then the state's mode,
+    // count and operator after the last key. No chord is left pending.
+    type Case = (
+        &'static str,
+        Vec<Resolution>,
+        &'static str,
+        Option<usize>,
+        Option<&'static str>,
+    );
+    let cases: [Case; 14] = [
+        (
+            "3 w",
+            vec![Pending, run("t.word", None, Some(3))],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "1 0 w",
+            vec![Pending, Pending, run("t.word", None, Some(10))],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "0",
+            vec![run("t.line_start", None, None)],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "2 d 3 w",
+            vec![
+                Pending,
+                Pending,
+                Pending,
+                run("t.delete", Some("t.word"), Some(6)),
+            ],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "d d",
+            vec![Pending, run("t.delete", Some("t.line"), None)],
+            "normal",
+            None,
+            None,
+        ),
+        ("3 escape", vec![Pending, Cancelled], "normal", None, None),
+        ("3 q", vec![Pending, Cancelled], "normal", None, None),
+        (
+            "g 3",
+            vec![Pending, run("t.g_three", None, None)],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "3 g g",
+            vec![Pending, Pending, run("t.top", None, Some(3))],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "i 3 escape",
+            vec![Done, Resolution::Run(Invocation::insert("3")), Done],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "v 1",
+            vec![Done, run("t.one", None, None)],
+            "ignore",
+            None,
+            None,
+        ),
+        ("3 v w", vec![Pending, Done, Unbound], "ignore", None, None),
+        (
+            "ctrl-3",
+            vec![run("t.ctrl_three", None, None)],
+            "normal",
+            None,
+            None,
+        ),
+        (
+            "2 d c",
+            vec![Pending, Pending, Cancelled],
+            "normal",
+            None,
+            None,
+        ),
+    ];
+    for (keys, expected, mode, count, operator) in cases {
+        let (d, mut state) = dispatcher();
+        let resolutions: Vec<Resolution> = KeySequence::parse(keys)
+            .unwrap()
+            .as_slice()
+            .iter()
+            .map(|&k| d.resolve(&mut state, &KeyEvent::new(k), &[]))
+            .collect();
+        assert_eq!(resolutions, expected, "{keys}");
+        assert_eq!(state.mode().as_str(), mode, "{keys}");
+        assert_eq!(state.count(), count, "{keys}");
+        assert_eq!(
+            state.operator(),
+            operator.map(CommandId::from).as_ref(),
+            "{keys}"
+        );
+        assert_eq!(state.pending(), [], "{keys}");
     }
 }
 
