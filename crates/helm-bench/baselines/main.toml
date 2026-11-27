@@ -6,12 +6,15 @@
 #
 # Times are nanoseconds per iteration. Each interval is criterion's 95%
 # bootstrap confidence interval. bench-compare gates on the median; the mean
-# is here too because criterion reports it.
+# is here too because criterion reports it. artifact_digest is GitHub's
+# SHA-256 of the artifact zip, which identifies a copy found after GitHub
+# deletes the artifact.
 
 [source]
 commit = "5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96"
 artifact = "criterion-5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96"
 artifact_id = 15093909343
+artifact_digest = "sha256:cbc8f9ce362511f11bc1cd249bf28811499f9dfdd84715b4cb491362c3532a14"
 artifact_created = "2026-11-26T07:07:08Z"
 run = "https://github.com/shubhook/helm/actions/runs/45772477109"
 job = "https://github.com/shubhook/helm/actions/runs/45772477109/job/139748151308"

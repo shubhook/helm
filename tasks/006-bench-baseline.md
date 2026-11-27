@@ -26,7 +26,7 @@ A `[source]` table says where the numbers came from:
 | Key | Value |
 | --- | --- |
 | `commit` | The main commit `bench-record` measured. |
-| `artifact`, `artifact_id`, `artifact_created` | The artifact's name, id and creation time. |
+| `artifact`, `artifact_id`, `artifact_digest`, `artifact_created` | The artifact's name, id, GitHub's SHA-256 digest of its zip, and creation time. |
 | `run`, `job` | Links to the CI run and its `bench-record` job. |
 | `runner_label`, `runner_name`, `runner_image` | The `runs-on` label, the hosted runner's name, and the runner image and version from the job log. |
 | `bench_flags` | The criterion flags the job ran with. |
@@ -35,21 +35,23 @@ Then one `[benchmarks."<criterion full id>"]` table per benchmark in the artifac
 
 The rope baseline the Phase 1 gate asks for is the three `text/` benchmarks from `benches/text.rs`: `text/insert_middle_10mb`, `text/byte_to_line_10mb` and `text/utf16_to_byte_10mb`. The file holds every benchmark in the artifact, because filtering would only add a step to the script.
 
-The median is there because `bench-compare` gates on it. The mean is there because criterion reports it and the brief asked for it. The `time:` line in the job log is neither: criterion prints its slope estimate there, so it won't match either column exactly.
+The median is there because `bench-compare` gates on it. The mean is there because criterion reports it and the brief asked for it. The middle number on a `time:` line in the job log depends on how criterion sampled the benchmark. For linear sampling it is the slope estimate, which matches neither column. For flat sampling there is no slope, and it is the mean. In this artifact, `encoding/decode_encode_bom_10mb` used flat sampling (its `estimates.json` has no slope) and every other benchmark used linear sampling.
 
 ### The committed numbers
 
-From `criterion-5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96` (artifact id 15093909343), made by [run 45772477109](https://github.com/shubhook/helm/actions/runs/45772477109) on main commit `5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96`, on an `ubuntu-latest` runner with image `ubuntu-26.04` version `20261122.9.1`. The artifact was created on 2026-11-26 and expires around 2027-02-24. No number comes from a local run.
+From `criterion-5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96` (artifact id 15093909343, digest `sha256:cbc8f9ce362511f11bc1cd249bf28811499f9dfdd84715b4cb491362c3532a14`), made by [run 45772477109](https://github.com/shubhook/helm/actions/runs/45772477109) on main commit `5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96`, on an `ubuntu-latest` runner with image `ubuntu-26.04` version `20261122.9.1`. The artifact was created on 2026-11-26 and expires around 2027-02-24. No number comes from a local run.
 
 ### Refreshing
 
-Run `crates/helm-bench/baselines/refresh.sh <sha>` for a main commit whose `criterion-<sha>` artifact hasn't expired, and commit the new `main.toml`. The script needs `gh`, signed in with read access, and `jq` 1.7 or later, which prints numbers exactly as `estimates.json` holds them. Older numbers stay in git history, so one file is enough. Refresh when a gate or report needs current numbers; nothing refreshes it automatically.
+Run `crates/helm-bench/baselines/refresh.sh <sha>` for a main commit whose `criterion-<sha>` artifact hasn't expired, and commit the new `main.toml`. The script needs `gh`, signed in with read access, in a version whose `gh api` has the `--allow-escape-sequences` flag: the job log holds terminal colour codes, and `gh` won't print them without it. The script checks `gh api --help` for the flag and stops if it's missing. It also needs `jq` 1.7 or later, which prints numbers exactly as `estimates.json` holds them. Older numbers stay in git history, so one file is enough.
+
+The script writes to a temporary file next to `main.toml` and renames it over `main.toml` only after the whole file is written. On any error, such as no artifact, a missing runner image, image version or `BENCH_FLAGS` in the job log, a missing statistic, bad JSON, or no benchmarks saved as `main`, it stops and leaves `main.toml` as it was. It reads the runner image and version only inside the log's "Runner Image" group. String values go through `jq`'s `tojson`, so quotes, backslashes and control characters come out as valid TOML escapes. Refresh when a gate or report needs current numbers; nothing refreshes it automatically.
 
 ### Choices I rejected
 
 - **Store the numbers in a release asset from `bench-record` (option b).** It needs `contents: write` on a job that runs `cargo bench` on main's code, a change to `.github/workflows/ci.yml`, and a release or tag per commit that nobody reviews. Release assets can also be deleted, and the numbers would sit outside the repo where a gate report can't link to them by commit. A committed file is reviewed in a PR and lasts as long as the repo.
 - **Raise `retention-days`.** GitHub caps artifact retention, at 90 days for public repositories, so the numbers would still expire.
-- **Commit the whole criterion directory.** About 48 KB per refresh, mostly raw samples nobody reads. The six statistics per benchmark are what a report quotes, and the artifact id says where the rest was.
+- **Commit the whole criterion directory, or just each benchmark's raw `estimates.json`.** The whole directory is about 48 KB per refresh, mostly raw samples nobody reads. The raw `estimates.json` files would add the standard errors and the median absolute deviation, standard deviation and slope estimates, none of which a gate report quotes or `bench-compare` reads. The six statistics per benchmark are what a report needs. The artifact id and `artifact_digest` identify the full results if a copy of the zip turns up after GitHub deletes it.
 - **Have CI commit the file to main, or push to a `gh-pages` branch** (for example with `benchmark-action/github-action-benchmark`). Both need a write token in CI and a new third-party action, and they land numbers on main without review.
 - **Compare PRs with the committed numbers.** The perf-hardware decision in `docs/plan.md` says shared runners are too noisy for that, and `bench-compare` keeps comparing each PR with its base commit on one runner. `main.toml` is a record for reports, not a threshold.
 
@@ -61,7 +63,7 @@ How a reviewer checks `main.toml` against the artifact:
 
 1. Rebuild it and diff. On this PR's branch, run `crates/helm-bench/baselines/refresh.sh 5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96`, then `git diff --exit-code crates/helm-bench/baselines/main.toml`. No diff means the file is exactly what the artifact gives.
 2. Or spot-check by hand. Download the artifact with `gh run download 45772477109 -R shubhook/helm -n criterion-5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96 -D /tmp/criterion`, then compare one benchmark's numbers, for example `jq '.mean, .median' /tmp/criterion/text/insert_middle_10mb/main/estimates.json` against the `text/insert_middle_10mb` table.
-3. Check `[source]` against the run page: the commit, the `bench-record` job link, and the runner image in the job log's "Runner Image" group.
+3. Check `[source]` against the run page: the commit, the `bench-record` job link, and the runner image in the job log's "Runner Image" group. To check the digest, run `gh api repos/shubhook/helm/actions/artifacts/15093909343/zip > /tmp/criterion.zip && shasum -a 256 /tmp/criterion.zip`, which prints the hex digits of `artifact_digest`.
 
 The PR must not change the result of `bench`, `bench-plan`, `bench-shard` or any other check on any PR, since no workflow or checked file reads the new directory.
 
