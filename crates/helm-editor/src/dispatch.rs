@@ -26,8 +26,8 @@ pub struct KeyState {
     operator: Option<(CommandId, ModeId, Option<usize>)>,
     /// The count typed so far, in a counting mode.
     count: Option<usize>,
-    /// The register name typed so far (T-109). A placeholder: the
-    /// implementation may reshape it.
+    /// The register name typed so far (T-109). It stays here while an
+    /// operator is pending, until the operator runs.
     register: Option<char>,
     /// The command line typed so far in a [`Typing::Line`] mode, and the
     /// mode it was entered from (T-109).
@@ -67,7 +67,7 @@ impl KeyState {
     /// the operator runs. `helm-ui` shows it in the status bar while it
     /// waits for the next key.
     pub fn register(&self) -> Option<char> {
-        todo!()
+        self.register
     }
 
     /// The command line typed so far (T-109), or `None` when the mode's
@@ -75,7 +75,7 @@ impl KeyState {
     /// [`cancel`](Self::cancel) and a keymap switch drop it and go back to
     /// the mode it was entered from, as for a pending operator.
     pub fn line(&self) -> Option<&str> {
-        todo!()
+        self.line.as_ref().map(|(line, _)| line.as_str())
     }
 
     /// Drops the pending chord, the pending operator, the pending count
@@ -87,13 +87,21 @@ impl KeyState {
     pub fn cancel(&mut self) -> bool {
         let chord = !self.pending.is_empty();
         let count = self.count.take().is_some();
+        let register = self.register.take().is_some();
         self.pending.clear();
+        let line = match self.line.take() {
+            Some((_, mode)) => {
+                self.mode = mode;
+                true
+            }
+            None => false,
+        };
         match self.operator.take() {
             Some((_, mode, _)) => {
                 self.mode = mode;
                 true
             }
-            None => chord || count,
+            None => chord || count || register || line,
         }
     }
 }
@@ -131,8 +139,9 @@ pub enum Resolution {
 /// [`sync`](Self::sync), and then:
 ///
 /// - it cancels as [`KeyState::cancel`] does: it drops its pending chord,
-///   pending operator and pending count, running nothing, and goes back to
-///   the mode the operator was set in, if one was held;
+///   pending operator, pending count, pending register and command line
+///   (T-109), running nothing, and goes back to the mode the operator was
+///   set in or the line was entered from, if either was held;
 /// - then it keeps its mode if the new keymap has a mode with the same id,
 ///   and otherwise goes to the new keymap's initial mode.
 ///
@@ -361,6 +370,8 @@ impl Dispatcher {
                         command: command.clone(),
                         args: CommandArgs {
                             count: state.count.take(),
+                            register: state.register.take(),
+                            text: state.line.as_ref().map(|(line, _)| line.clone()),
                             ..CommandArgs::default()
                         },
                     }),
@@ -375,6 +386,7 @@ impl Dispatcher {
                             args: CommandArgs {
                                 motion: Some(command.clone()),
                                 count,
+                                register: state.register.take(),
                                 ..CommandArgs::default()
                             },
                         })
@@ -384,7 +396,14 @@ impl Dispatcher {
                     state.cancel();
                     return Resolution::Cancelled;
                 }
-                Some(Action::Register(_)) => todo!("T-109: a pending register"),
+                Some(Action::Register(_)) if state.operator.is_some() => {
+                    state.cancel();
+                    return Resolution::Cancelled;
+                }
+                Some(Action::Register(name)) => {
+                    state.register = Some(*name);
+                    Resolution::Pending
+                }
                 Some(Action::Operator(command)) => {
                     let count = state.count.take();
                     state.operator = Some((command.clone(), state.mode.clone(), count));
@@ -396,14 +415,21 @@ impl Dispatcher {
                 }
             };
             if let Some(mode) = &binding.then_mode {
-                state.mode = mode.clone();
+                // `from` is the mode after any return to the operator's.
+                let from = std::mem::replace(&mut state.mode, mode.clone());
+                if self.keymap.lines() {
+                    self.enter_line(state, from);
+                }
             }
             return resolution;
         }
 
         // Rule 3. Most keys reach here with nothing pending, and then
         // `cancel` would change nothing, so it is skipped.
-        if (!state.pending.is_empty() || state.operator.is_some() || state.count.is_some())
+        if (!state.pending.is_empty()
+            || state.operator.is_some()
+            || state.count.is_some()
+            || state.register.is_some())
             && state.cancel()
         {
             return Resolution::Cancelled;
@@ -411,15 +437,33 @@ impl Dispatcher {
 
         // Rules 4 and 5.
         let modifiers = keystroke.modifiers();
-        let types = self
+        let typing = self
             .keymap
             .mode(state.mode.as_str())
-            .is_some_and(|mode| mode.typing == Typing::Insert);
-        match &event.text {
-            Some(text) if types && !text.is_empty() && !modifiers.ctrl && !modifiers.cmd => {
-                Resolution::Run(Invocation::insert(text.clone()))
-            }
+            .map(|mode| mode.typing);
+        let text = event
+            .text
+            .as_deref()
+            .filter(|text| !text.is_empty() && !modifiers.ctrl && !modifiers.cmd);
+        match (typing, text) {
+            (Some(Typing::Insert), Some(text)) => Resolution::Run(Invocation::insert(text)),
+            (Some(Typing::Line), _) => line_key(state, keystroke, text),
             _ => Resolution::Unbound,
+        }
+    }
+
+    /// After a binding's `then_mode` switched `state` out of mode `from`:
+    /// starts an empty command line if the new mode's typing is
+    /// [`Typing::Line`] and none is open, and drops the line if it isn't.
+    fn enter_line(&self, state: &mut KeyState, from: ModeId) {
+        let line = self
+            .keymap
+            .mode(state.mode.as_str())
+            .is_some_and(|mode| mode.typing == Typing::Line);
+        if !line {
+            state.line = None;
+        } else if state.line.is_none() {
+            state.line = Some((String::new(), from));
         }
     }
 
@@ -456,10 +500,6 @@ impl Dispatcher {
     /// This is the dispatch `helm-ui` uses. [`dispatch`](Self::dispatch) is
     /// this with a fresh [`Session`] that is dropped afterwards, along with
     /// the requests.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn dispatch_in(
         &self,
         state: &mut KeyState,
@@ -469,8 +509,38 @@ impl Dispatcher {
         set: &mut BufferSet,
         session: &mut Session,
     ) -> Result<(Resolution, Vec<Request>), CommandError> {
-        todo!()
+        let resolution = self.resolve(state, event, contexts);
+        let requests = match &resolution {
+            Resolution::Run(invocation) => {
+                self.registry.run_in(invocation, editor, set, session)?
+            }
+            _ => Vec::new(),
+        };
+        Ok((resolution, requests))
     }
+}
+
+/// Rule 5 of [`Dispatcher::resolve`]: an unbound key in a
+/// [`Typing::Line`] mode, with `text` the text it types, if any.
+fn line_key(state: &mut KeyState, keystroke: Keystroke, text: Option<&str>) -> Resolution {
+    let mode = &state.mode;
+    let (line, _) = state
+        .line
+        .get_or_insert_with(|| (String::new(), mode.clone()));
+    if let Some(text) = text {
+        line.push_str(text);
+        return Resolution::Pending;
+    }
+    if keystroke.key() != Key::Backspace || keystroke.modifiers() != Modifiers::NONE {
+        return Resolution::Unbound;
+    }
+    if line.pop().is_some() {
+        return Resolution::Pending;
+    }
+    if let Some((_, mode)) = state.line.take() {
+        state.mode = mode;
+    }
+    Resolution::Done
 }
 
 /// Whether `binding` applies in mode `mode` with `contexts` holding.

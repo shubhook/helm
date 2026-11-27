@@ -224,6 +224,9 @@ pub struct Keymap {
     /// Whether any mode's typing is [`Typing::Count`], so the dispatcher's
     /// count rule can skip its mode lookup for keymaps without one.
     counts: bool,
+    /// Whether any mode's typing is [`Typing::Line`], so the dispatcher's
+    /// command-line rule can skip its mode lookup for keymaps without one.
+    lines: bool,
     /// In the order they were added.
     bindings: Vec<Binding>,
     /// The index into `bindings` of every binding whose keys start with
@@ -250,9 +253,11 @@ impl Keymap {
             }
         }
         let counts = modes.iter().any(|mode| mode.typing == Typing::Count);
+        let lines = modes.iter().any(|mode| mode.typing == Typing::Line);
         Ok(Self {
             name: name.into(),
             counts,
+            lines,
             modes,
             bindings: Vec::new(),
             by_first_key: HashMap::new(),
@@ -302,6 +307,11 @@ impl Keymap {
     /// Whether any mode's typing is [`Typing::Count`].
     pub(crate) fn counts(&self) -> bool {
         self.counts
+    }
+
+    /// Whether any mode's typing is [`Typing::Line`].
+    pub(crate) fn lines(&self) -> bool {
+        self.lines
     }
 
     /// The bindings, in the order they were added.

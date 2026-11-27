@@ -78,7 +78,6 @@ proptest! {
     /// `.` after a change and a move does what typing the change again
     /// does, to the text and the cursors.
     #[test]
-    #[ignore = "T-109: not implemented yet"]
     fn dot_does_what_typing_the_change_again_does(
         text in text(),
         at in 0.0..1.0f64,
@@ -99,7 +98,6 @@ proptest! {
     /// never the line break of a line with text, so the two can differ by
     /// that break. `vim.rs` says when.)
     #[test]
-    #[ignore = "T-109: not implemented yet"]
     fn yank_then_put_over_the_same_text_changes_nothing(
         text in text(),
         at in 0.0..1.0f64,
@@ -118,7 +116,6 @@ proptest! {
     /// `{n}i` with typed text inserts it `n` times, and one `u` restores
     /// the text.
     #[test]
-    #[ignore = "T-109: not implemented yet"]
     fn a_counted_insert_types_n_copies_in_one_undo_step(
         text in text(),
         at in 0.0..1.0f64,
@@ -139,7 +136,6 @@ proptest! {
 
     /// Any text through the clipboard comes back byte for byte (ED-1).
     #[test]
-    #[ignore = "T-109: not implemented yet"]
     fn the_clipboard_keeps_every_byte(text in text()) {
         let mut v = Vim::new("|");
         v.session.set_clipboard(Some(text.clone()));
@@ -150,7 +146,6 @@ proptest! {
     /// Objects under `d` at up to two cursors leave every cursor on a
     /// normal-mode position, and as many `u` as edits restore the text.
     #[test]
-    #[ignore = "T-109: not implemented yet"]
     fn objects_under_d_undo_and_keep_cursors_on_chars(
         text in text(),
         at in prop::collection::vec(0.0..1.0f64, 1..3),

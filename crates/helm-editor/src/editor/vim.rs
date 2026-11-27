@@ -15,8 +15,9 @@ use helm_text::{Buffer, BufferSet, Edit, TextBuffer, Transaction, TransactionId}
 
 use super::{Editor, clamp_each, normal, owned_goals};
 use crate::motion::Reads;
+use crate::motion::vim::object::{self as o, VimObject};
 use crate::motion::vim::{self as m, Span, VimMotion};
-use crate::{EditorError, Selection, Selections};
+use crate::{EditorError, Register, Selection, Selections};
 
 /// Vim's two operators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +59,88 @@ fn visual_ends(buffer: &Buffer, reads: &mut Reads, selection: Selection) -> Opti
 /// What one selection contributes to an edit: where its cursor goes if it
 /// deletes nothing, and what it deletes.
 type Piece = (usize, Option<Span>);
+
+/// What a yank or an operator acts on (T-109): a motion or a text object.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Target {
+    /// One of Vim's motions.
+    Motion(VimMotion),
+    /// One of Vim's text objects.
+    Object(VimObject),
+}
+
+/// The register pieces `spans` take from the text, one per span that
+/// covers anything, or `None` if none does. Linewise spans are whole lines
+/// ending with a line break, `newline` where the last line has none. With
+/// a mix, the charwise pieces get `newline` too and the register is
+/// linewise.
+fn taken<'a>(
+    buffer: &Buffer,
+    spans: impl Iterator<Item = &'a Span>,
+    newline: &str,
+) -> Option<Register> {
+    let mut pieces = Vec::new();
+    let mut lines = 0;
+    for span in spans {
+        match span {
+            Span::Lines(a, b) => {
+                pieces.push((m::lines_text(buffer, *a, *b, newline), true));
+                lines += 1;
+            }
+            Span::Chars(range) if !range.is_empty() => {
+                pieces.push((buffer.slice(range.clone()).unwrap_or_default(), false));
+            }
+            Span::Chars(_) => {}
+        }
+    }
+    if pieces.is_empty() {
+        return None;
+    }
+    let linewise = lines > 0;
+    let pieces = pieces
+        .into_iter()
+        .map(|(mut piece, whole)| {
+            if linewise && !whole {
+                piece.push_str(newline);
+            }
+            piece
+        })
+        .collect();
+    Some(Register { pieces, linewise })
+}
+
+/// Whether `text` holds a line break.
+fn has_break(text: &str) -> bool {
+    text.contains(['\n', '\r'])
+}
+
+/// `text` without its last line break, and that break.
+fn split_break(text: &str) -> (&str, &str) {
+    let body = text
+        .strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .or_else(|| text.strip_suffix('\r'))
+        .unwrap_or(text);
+    (body, &text[body.len()..])
+}
+
+/// Where the cursor goes in charwise text put at `at`: on its last char,
+/// or at its start when it spans lines.
+fn put_cursor(at: usize, text: &str) -> usize {
+    match text.chars().next_back() {
+        Some(last) if !has_break(text) => at + text.len() - last.len_utf8(),
+        _ => at,
+    }
+}
+
+/// One edit of a put: the bytes it replaces, the text, and where the
+/// cursor goes: an offset from the edit's start, and whether the cursor
+/// then moves to the first non-blank of the line at that offset.
+struct Put {
+    range: Range<usize>,
+    text: String,
+    cursor: (usize, bool),
+}
 
 impl Editor {
     /// The selections a Vim command starts from and what `each` reads from
@@ -282,13 +365,26 @@ impl Editor {
         &mut self,
         set: &mut BufferSet,
         operator: Operator,
-        motion: VimMotion,
+        target: Target,
         count: Option<usize>,
-    ) -> Result<Option<TransactionId>, EditorError> {
+    ) -> Result<Option<Register>, EditorError> {
         let change = operator == Operator::Change;
         self.vim_edit(set, change, true, |buffer, reads, selection| {
             let p = settled_head(buffer, reads, selection)?;
-            Some((p, m::operator_span(buffer, reads, p, motion, count, change)))
+            Some(match target {
+                Target::Motion(motion) => {
+                    (p, m::operator_span(buffer, reads, p, motion, count, change))
+                }
+                // An object edit's undo puts the cursor at its range's start.
+                Target::Object(object) => match o::span(buffer, reads, p, object, count) {
+                    Some(Span::Chars(range)) if range.is_empty() && !change => (p, None),
+                    Some(Span::Chars(range)) => (range.start, Some(Span::Chars(range))),
+                    Some(Span::Lines(a, b)) => {
+                        (m::line_start_of_line(buffer, a), Some(Span::Lines(a, b)))
+                    }
+                    None => (p, None),
+                },
+            })
         })
     }
 
@@ -299,7 +395,7 @@ impl Editor {
         set: &mut BufferSet,
         operator: Operator,
         lines: bool,
-    ) -> Result<Option<TransactionId>, EditorError> {
+    ) -> Result<Option<Register>, EditorError> {
         self.vim_edit(
             set,
             operator == Operator::Change,
@@ -324,16 +420,23 @@ impl Editor {
     /// opens an undo group first and leaves each cursor where typing
     /// starts. Otherwise each cursor settles. With `at_homes`, undo puts
     /// back a cursor at each piece's home instead of the selections.
+    /// Returns what it took from the text, as a register holds it (T-109).
     fn vim_edit(
         &mut self,
         set: &mut BufferSet,
         change: bool,
         at_homes: bool,
         piece: impl FnMut(&Buffer, &mut Reads, Selection) -> Option<Piece>,
-    ) -> Result<Option<TransactionId>, EditorError> {
+    ) -> Result<Option<Register>, EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
         let (start, pieces) = self.vim_start(buffer, &mut reads, piece);
+        let newline = self.format.newline();
+        let register = taken(
+            buffer,
+            pieces.iter().filter_map(|(_, span)| span.as_ref()),
+            newline.as_str(),
+        );
         let primary = start.primary_index();
         let before = if at_homes {
             let homes = pieces.iter().map(|&(home, _)| Selection::cursor(home));
@@ -439,7 +542,7 @@ impl Editor {
             Some(self.apply(set, transaction, before, moved))
         };
         if change {
-            return Ok(id);
+            return Ok(register);
         }
 
         // Settle in the text after the edit.
@@ -461,7 +564,7 @@ impl Editor {
             record.after = after.clone();
         }
         self.selections = after;
-        Ok(id)
+        Ok(register)
     }
 
     /// `i`, `a`, `I` and `A` (T-108): moves each cursor to where typing
@@ -592,5 +695,364 @@ impl Editor {
         let list = cursors.into_iter().map(Selection::cursor).collect();
         self.selections = normal(list, start.primary_index());
         result
+    }
+}
+
+impl Editor {
+    /// `y` with `target` at every cursor (T-109), and `Y`: what each cursor's
+    /// range holds, as a register holds it, or `None` if no range covers
+    /// anything. Applies no transaction. Each cursor goes to its range's
+    /// start, or for a linewise range to its first line at the same
+    /// column, settled.
+    pub(crate) fn vim_yank(
+        &mut self,
+        set: &BufferSet,
+        target: Target,
+        count: Option<usize>,
+    ) -> Result<Option<Register>, EditorError> {
+        let buffer = self.buffer_in(set)?;
+        let mut reads = Reads::default();
+        let (start, spans) = self.vim_start(buffer, &mut reads, |buffer, reads, selection| {
+            let p = settled_head(buffer, reads, selection)?;
+            let span = match target {
+                Target::Motion(motion) => m::operator_span(buffer, reads, p, motion, count, false),
+                Target::Object(object) => o::span(buffer, reads, p, object, count)
+                    .filter(|span| !matches!(span, Span::Chars(range) if range.is_empty())),
+            };
+            Some((p, span))
+        });
+        let newline = self.format.newline();
+        let register = taken(
+            buffer,
+            spans.iter().filter_map(|(_, span)| span.as_ref()),
+            newline.as_str(),
+        );
+        let cursors = spans
+            .iter()
+            .map(|(p, span)| {
+                let at = match span {
+                    Some(Span::Chars(range)) => range.start,
+                    Some(Span::Lines(a, _)) => m::same_column(buffer, &mut reads, *p, *a),
+                    None => *p,
+                };
+                Selection::cursor(m::settle(buffer, &mut reads, at).unwrap_or(at))
+            })
+            .collect();
+        self.selections = normal(cursors, start.primary_index());
+        Ok(register)
+    }
+
+    /// Visual `y` (T-109): what each selection, or with `lines` each
+    /// selection's lines, holds, as a register holds it. Each selection
+    /// becomes a cursor at its start, settled.
+    pub(crate) fn vim_yank_selections(
+        &mut self,
+        set: &BufferSet,
+        lines: bool,
+    ) -> Result<Option<Register>, EditorError> {
+        let buffer = self.buffer_in(set)?;
+        let mut reads = Reads::default();
+        let (start, ends) = self.vim_start(buffer, &mut reads, visual_ends);
+        let spans: Vec<Span> = ends
+            .iter()
+            .map(|&(anchor, cursor)| visual_span(buffer, &mut reads, anchor, cursor, lines))
+            .collect();
+        let newline = self.format.newline();
+        let register = taken(buffer, spans.iter(), newline.as_str());
+        let cursors = ends
+            .iter()
+            .map(|&(anchor, cursor)| {
+                let at = anchor.min(cursor);
+                Selection::cursor(m::settle(buffer, &mut reads, at).unwrap_or(at))
+            })
+            .collect();
+        self.selections = normal(cursors, start.primary_index());
+        Ok(register)
+    }
+
+    /// `p` (with `after`) and `P` (T-109): puts `register` `count` times
+    /// after or before every cursor, in one transaction, as the `vim`
+    /// module docs' "Putting" says.
+    pub(crate) fn vim_put(
+        &mut self,
+        set: &mut BufferSet,
+        register: &Register,
+        after: bool,
+        count: Option<usize>,
+    ) -> Result<Option<TransactionId>, EditorError> {
+        let buffer = self.buffer_in(set)?;
+        let mut reads = Reads::default();
+        let (start, heads) = self.vim_start(buffer, &mut reads, settled_head);
+        let newline = self.format.newline();
+        let texts = put_texts(register, heads.len(), count, newline.as_str());
+        let len = buffer.len_bytes();
+        let puts: Vec<Put> = heads
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| {
+                let text = &texts[i.min(texts.len() - 1)];
+                if !register.linewise {
+                    let at = if after {
+                        m::after_char(buffer, &mut reads, p)
+                    } else {
+                        p
+                    };
+                    let cursor = put_cursor(0, text);
+                    return Put {
+                        range: at..at,
+                        text: text.clone(),
+                        cursor: (cursor, false),
+                    };
+                }
+                let line = m::line_of(buffer, p);
+                let next = m::line_start_of_line(buffer, line + 1);
+                if !after {
+                    let at = m::line_start_of_line(buffer, line);
+                    Put {
+                        range: at..at,
+                        text: text.clone(),
+                        cursor: (0, true),
+                    }
+                } else if line + 1 < buffer.len_lines() {
+                    Put {
+                        range: next..next,
+                        text: text.clone(),
+                        cursor: (0, true),
+                    }
+                } else {
+                    // Below a last line with no line break: the break moves
+                    // to the front.
+                    let (body, end) = split_break(text);
+                    Put {
+                        range: len..len,
+                        text: format!("{end}{body}"),
+                        cursor: (end.len(), true),
+                    }
+                }
+            })
+            .collect();
+        Ok(self.apply_puts(set, start, puts))
+    }
+
+    /// Visual `p` and `P` (T-109): replaces each selection, or with `lines`
+    /// each selection's lines, with `register`, `count` times, in one
+    /// transaction, and returns what the selections held, as a register
+    /// holds it. With no register, each selection becomes a cursor on its
+    /// visual cursor char and nothing else changes.
+    pub(crate) fn vim_put_selections(
+        &mut self,
+        set: &mut BufferSet,
+        register: Option<&Register>,
+        lines: bool,
+        count: Option<usize>,
+    ) -> Result<Option<Register>, EditorError> {
+        let Some(register) = register else {
+            self.vim_exit_visual(set)?;
+            return Ok(None);
+        };
+        let buffer = self.buffer_in(set)?;
+        let mut reads = Reads::default();
+        let (start, ends) = self.vim_start(buffer, &mut reads, visual_ends);
+        let newline = self.format.newline();
+        let newline = newline.as_str();
+        let spans: Vec<Span> = ends
+            .iter()
+            .map(|&(anchor, cursor)| visual_span(buffer, &mut reads, anchor, cursor, lines))
+            .collect();
+        let replaced = taken(buffer, spans.iter(), newline);
+        let texts = put_texts(register, ends.len(), count, newline);
+        let puts: Vec<Put> = spans
+            .iter()
+            .enumerate()
+            .map(|(i, span)| {
+                let text = &texts[i.min(texts.len() - 1)];
+                let (range, ends_line) = match span {
+                    Span::Lines(a, b) => {
+                        let range = m::lines_range(buffer, *a, *b);
+                        let ended = buffer.slice(range.clone()).unwrap_or_default();
+                        let (_, end) = split_break(&ended);
+                        (range, end.to_owned())
+                    }
+                    Span::Chars(range) => (range.clone(), String::new()),
+                };
+                let (text, cursor) = match (register.linewise, lines) {
+                    (true, true) if ends_line.is_empty() => {
+                        (split_break(text).0.to_owned(), (0, true))
+                    }
+                    (true, true) => (text.clone(), (0, true)),
+                    // Linewise text over chars goes on its own line.
+                    (true, false) => (format!("{newline}{text}"), (newline.len(), true)),
+                    // Chars over lines get a line break after them.
+                    (false, _) => (format!("{text}{ends_line}"), (put_cursor(0, text), false)),
+                };
+                Put {
+                    range,
+                    text,
+                    cursor,
+                }
+            })
+            .collect();
+        self.apply_puts(set, start, puts);
+        Ok(replaced)
+    }
+
+    /// A text object in a visual mode (T-109), as the `vim` module docs'
+    /// "Text objects" say: a one-char selection becomes the object, and a
+    /// longer one grows by it from the visual cursor. Where the object
+    /// finds nothing, the selection stays.
+    pub(crate) fn vim_select_object(
+        &mut self,
+        set: &BufferSet,
+        object: VimObject,
+        count: Option<usize>,
+    ) -> Result<(), EditorError> {
+        let buffer = self.buffer_in(set)?;
+        let mut reads = Reads::default();
+        let (start, ends) = self.vim_start(buffer, &mut reads, visual_ends);
+        let list = start
+            .as_slice()
+            .iter()
+            .zip(&ends)
+            .map(|(&selection, &(anchor, cursor))| {
+                let grown = if anchor == cursor {
+                    o::span(buffer, &mut reads, cursor, object, count)
+                        .filter(|span| !matches!(span, Span::Chars(r) if r.is_empty()))
+                        .map(|span| o::visual_ends(buffer, &mut reads, &span))
+                } else if matches!(object.kind, o::Kind::Word { .. }) && cursor > anchor {
+                    let from = o::after(buffer, &mut reads, cursor);
+                    o::word_from(buffer, &mut reads, from, object, count).map(|span| {
+                        let (_, last) = o::visual_ends(buffer, &mut reads, &span);
+                        (anchor, last.max(cursor))
+                    })
+                } else {
+                    o::span(buffer, &mut reads, cursor, object, count)
+                        .filter(|span| !matches!(span, Span::Chars(r) if r.is_empty()))
+                        .map(|span| {
+                            let (first, last) = o::visual_ends(buffer, &mut reads, &span);
+                            let lo = anchor.min(cursor).min(first);
+                            let hi = anchor.max(cursor).max(last);
+                            if cursor < anchor { (hi, lo) } else { (lo, hi) }
+                        })
+                };
+                match grown {
+                    Some((anchor, cursor)) => {
+                        let (anchor, head) = m::encode(buffer, &mut reads, anchor, cursor);
+                        Selection::new(anchor, head)
+                    }
+                    None => selection,
+                }
+            })
+            .collect();
+        self.selections = normal(list, start.primary_index());
+        Ok(())
+    }
+
+    /// Applies `puts`, one per selection of `start` in order, as one
+    /// transaction, and puts each cursor where its put says. Puts whose
+    /// ranges overlap an earlier one are dropped, and their cursors go where
+    /// that one's does.
+    fn apply_puts(
+        &mut self,
+        set: &mut BufferSet,
+        start: Selections,
+        puts: Vec<Put>,
+    ) -> Option<TransactionId> {
+        let primary = start.primary_index();
+        let mut transaction = Transaction::new();
+        // Each put's start in the text after the edit, and whether its
+        // cursor is the first non-blank of a line.
+        let mut places: Vec<(usize, bool)> = Vec::with_capacity(puts.len());
+        let mut shift: isize = 0;
+        let mut last: Option<(Range<usize>, usize, bool)> = None;
+        let mut changed = false;
+        for put in puts {
+            if let Some((range, at, lines)) = &last
+                && (put.range.start < range.end || put.range == *range)
+            {
+                places.push((*at, *lines));
+                continue;
+            }
+            let new_start = (put.range.start as isize + shift) as usize;
+            let at = new_start + put.cursor.0;
+            shift += put.text.len() as isize - put.range.len() as isize;
+            changed |= !put.text.is_empty() || !put.range.is_empty();
+            if !(put.text.is_empty() && put.range.is_empty()) {
+                transaction.push(Edit::replace(self.buffer, put.range.clone(), put.text));
+            }
+            places.push((at, put.cursor.1));
+            last = Some((put.range, at, put.cursor.1));
+        }
+        let moved = normal(
+            places
+                .iter()
+                .map(|&(at, _)| Selection::cursor(at))
+                .collect(),
+            primary,
+        );
+        if !changed {
+            self.selections = start;
+            return None;
+        }
+        let id = self.apply(set, transaction, start, moved);
+        // The cursors settle, and linewise ones go to their line's first
+        // non-blank, in the text after the edit.
+        let buffer = set.get(self.buffer).expect("the buffer was just edited");
+        let mut reads = Reads::default();
+        let cursors = places
+            .iter()
+            .map(|&(at, lines)| {
+                let at = if lines {
+                    m::first_non_blank(buffer, &mut reads, m::line_of(buffer, at))
+                } else {
+                    at
+                };
+                Selection::cursor(m::settle(buffer, &mut reads, at).unwrap_or(at))
+            })
+            .collect();
+        let after = normal(cursors, primary);
+        if let Some(record) = self.history.get_mut(&id) {
+            record.after = after.clone();
+        }
+        self.selections = after;
+        Some(id)
+    }
+}
+
+/// What a visual selection with these ends covers: its chars, or with
+/// `lines` its lines.
+fn visual_span(
+    buffer: &Buffer,
+    reads: &mut Reads,
+    anchor: usize,
+    cursor: usize,
+    lines: bool,
+) -> Span {
+    if lines {
+        let (a, b) = (m::line_of(buffer, anchor), m::line_of(buffer, cursor));
+        return Span::Lines(a.min(b), a.max(b));
+    }
+    let (from, to) = m::encode(buffer, reads, anchor, cursor);
+    Span::Chars(from.min(to)..from.max(to))
+}
+
+/// The text each of `cursors` cursors puts from `register`, `count` times
+/// over: its own piece when there are as many pieces as cursors, and
+/// otherwise every piece joined, as [`Register::text`] joins them. Holds
+/// one text when every cursor puts the same.
+fn put_texts(
+    register: &Register,
+    cursors: usize,
+    count: Option<usize>,
+    newline: &str,
+) -> Vec<String> {
+    let n = count.unwrap_or(1).max(1);
+    if register.pieces.len() == cursors {
+        register
+            .pieces
+            .iter()
+            .map(|piece| piece.repeat(n))
+            .collect()
+    } else {
+        vec![register.text(newline).repeat(n)]
     }
 }

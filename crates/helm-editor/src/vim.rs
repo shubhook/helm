@@ -281,8 +281,8 @@
 //! # Insert mode
 //!
 //! Each of these opens an undo group (see [`Editor`](crate::Editor),
-//! "Undo groups") and enters insert mode. They ignore a count: `3ix` with
-//! its repeat is T-109's.
+//! "Undo groups") and enters insert mode. Their count repeats the typing
+//! on Escape (T-109's "Counted inserts").
 //!
 //! | Key | Id | Where typing starts |
 //! | --- | --- | --- |
@@ -718,7 +718,7 @@ pub fn keymap() -> Keymap {
     let run = |keys: &str, command: &str| Binding::run(keys, command).expect("the keys parse");
     let switch = |keys: &str, mode: &str| Binding::switch_mode(keys, mode).expect("the keys parse");
 
-    let mut bindings = Vec::with_capacity(115);
+    let mut bindings = Vec::with_capacity(115 + 391);
     for (keys, motion, _) in MOTIONS {
         bindings.push(run(keys, motion).in_mode(NORMAL));
     }
@@ -814,6 +814,8 @@ pub fn keymap() -> Keymap {
     bindings.push(run("backspace", editor::DELETE_BACKWARD).in_mode(INSERT));
     bindings.push(run("delete", editor::DELETE_FORWARD).in_mode(INSERT));
 
+    t109_bindings(&mut bindings, &MOTIONS);
+
     let modes = vec![
         Mode::new(NORMAL, Typing::Count),
         Mode::new(INSERT, Typing::Insert),
@@ -821,12 +823,187 @@ pub fn keymap() -> Keymap {
         Mode::new(VISUAL_LINE, Typing::Count),
         Mode::new(DELETE_PENDING, Typing::Count),
         Mode::new(CHANGE_PENDING, Typing::Count),
+        Mode::new(YANK_PENDING, Typing::Count),
+        Mode::new(COMMAND_LINE, Typing::Line),
     ];
-    let mut keymap = Keymap::new(NAME, modes).expect("six modes, no duplicates");
+    let mut keymap = Keymap::new(NAME, modes).expect("eight modes, no duplicates");
     for binding in bindings {
         keymap
             .bind(binding)
-            .expect("bindings name only the six modes");
+            .expect("bindings name only the eight modes");
     }
     keymap
+}
+
+/// The 391 bindings T-109 adds, after T-108's, as [`keymap`] lists them.
+/// `motions` are T-108's motion keys and their ids.
+fn t109_bindings(bindings: &mut Vec<Binding>, motions: &[(&str, &str, &str)]) {
+    let run = |keys: &str, command: &str| Binding::run(keys, command).expect("the keys parse");
+
+    bindings.push(
+        Binding::operator("y", ids::YANK)
+            .expect("the keys parse")
+            .in_mode(NORMAL)
+            .then_mode(YANK_PENDING),
+    );
+    for (keys, command) in [
+        ("Y", ids::YANK_LINE),
+        ("p", ids::PUT_AFTER),
+        ("P", ids::PUT_BEFORE),
+        (".", ids::REPEAT),
+    ] {
+        bindings.push(run(keys, command).in_mode(NORMAL));
+    }
+    bindings.push(
+        Binding::switch_mode(":", COMMAND_LINE)
+            .expect("the keys parse")
+            .in_mode(NORMAL),
+    );
+    for &(keys, motion, _) in motions {
+        bindings.push(run(keys, motion).in_mode(YANK_PENDING));
+    }
+    bindings.push(run("y", ids::LINE).in_mode(YANK_PENDING));
+    bindings.push(
+        run("enter", ids::EX)
+            .in_mode(COMMAND_LINE)
+            .then_mode(NORMAL),
+    );
+    bindings.push(
+        Binding::switch_mode("escape", NORMAL)
+            .expect("the keys parse")
+            .in_mode(COMMAND_LINE),
+    );
+    for (mode, yank, put, keep) in [
+        (
+            VISUAL,
+            ids::YANK_SELECTION,
+            ids::PUT_SELECTION,
+            ids::PUT_SELECTION_KEEP,
+        ),
+        (
+            VISUAL_LINE,
+            ids::YANK_LINES,
+            ids::PUT_LINES,
+            ids::PUT_LINES_KEEP,
+        ),
+    ] {
+        for (keys, command) in [("y", yank), ("p", put), ("P", keep)] {
+            bindings.push(run(keys, command).in_mode(mode).then_mode(NORMAL));
+        }
+    }
+
+    // Registers: `" x` in normal and both visual modes.
+    let names = ('a'..='z')
+        .chain('A'..='Z')
+        .chain('0'..='9')
+        .chain(['"', '-', '_', '+', '*']);
+    for mode in [NORMAL, VISUAL, VISUAL_LINE] {
+        for name in names.clone() {
+            let keys = format!("\" {name}");
+            bindings.push(
+                Binding::register(&keys, name)
+                    .expect("the keys parse")
+                    .in_mode(mode),
+            );
+        }
+    }
+
+    // Text objects.
+    const OBJECTS: [(&str, usize); 16] = [
+        ("w", 0),
+        ("W", 1),
+        ("(", 2),
+        (")", 2),
+        ("b", 2),
+        ("[", 3),
+        ("]", 3),
+        ("{", 4),
+        ("}", 4),
+        ("B", 4),
+        ("<", 5),
+        (">", 5),
+        ("\"", 6),
+        ("'", 7),
+        ("`", 8),
+        ("p", 9),
+    ];
+    const IDS: [[&str; 4]; 10] = [
+        [
+            ids::INNER_WORD,
+            ids::A_WORD,
+            ids::SELECT_INNER_WORD,
+            ids::SELECT_A_WORD,
+        ],
+        [
+            ids::INNER_BIG_WORD,
+            ids::A_BIG_WORD,
+            ids::SELECT_INNER_BIG_WORD,
+            ids::SELECT_A_BIG_WORD,
+        ],
+        [
+            ids::INNER_PAREN,
+            ids::A_PAREN,
+            ids::SELECT_INNER_PAREN,
+            ids::SELECT_A_PAREN,
+        ],
+        [
+            ids::INNER_BRACKET,
+            ids::A_BRACKET,
+            ids::SELECT_INNER_BRACKET,
+            ids::SELECT_A_BRACKET,
+        ],
+        [
+            ids::INNER_BRACE,
+            ids::A_BRACE,
+            ids::SELECT_INNER_BRACE,
+            ids::SELECT_A_BRACE,
+        ],
+        [
+            ids::INNER_ANGLE,
+            ids::A_ANGLE,
+            ids::SELECT_INNER_ANGLE,
+            ids::SELECT_A_ANGLE,
+        ],
+        [
+            ids::INNER_DOUBLE_QUOTE,
+            ids::A_DOUBLE_QUOTE,
+            ids::SELECT_INNER_DOUBLE_QUOTE,
+            ids::SELECT_A_DOUBLE_QUOTE,
+        ],
+        [
+            ids::INNER_SINGLE_QUOTE,
+            ids::A_SINGLE_QUOTE,
+            ids::SELECT_INNER_SINGLE_QUOTE,
+            ids::SELECT_A_SINGLE_QUOTE,
+        ],
+        [
+            ids::INNER_BACKTICK,
+            ids::A_BACKTICK,
+            ids::SELECT_INNER_BACKTICK,
+            ids::SELECT_A_BACKTICK,
+        ],
+        [
+            ids::INNER_PARAGRAPH,
+            ids::A_PARAGRAPH,
+            ids::SELECT_INNER_PARAGRAPH,
+            ids::SELECT_A_PARAGRAPH,
+        ],
+    ];
+    for (key, object) in OBJECTS {
+        let [inner, a, select_inner, select_a] = IDS[object];
+        let paragraph = key == "p";
+        for (prefix, id, select) in [("i", inner, select_inner), ("a", a, select_a)] {
+            let keys = format!("{prefix} {key}");
+            bindings.push(run(&keys, id).in_mode(DELETE_PENDING));
+            bindings.push(run(&keys, id).in_mode(CHANGE_PENDING).then_mode(INSERT));
+            bindings.push(run(&keys, id).in_mode(YANK_PENDING));
+            if paragraph {
+                bindings.push(run(&keys, select).in_mode(VISUAL).then_mode(VISUAL_LINE));
+                bindings.push(run(&keys, select).in_mode(VISUAL_LINE));
+            } else {
+                bindings.push(run(&keys, select).in_mode(VISUAL));
+                bindings.push(run(&keys, select).in_mode(VISUAL_LINE).then_mode(VISUAL));
+            }
+        }
+    }
 }

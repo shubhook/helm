@@ -136,7 +136,6 @@ fn editor(text: &str) -> (BufferSet, Editor) {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_register_waits_for_the_next_run() {
     let d = Dispatcher::new(registry(), keymap());
     let mut state = d.key_state();
@@ -157,7 +156,6 @@ fn a_register_waits_for_the_next_run() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_register_and_a_count_go_in_either_order() {
     let d = Dispatcher::new(registry(), keymap());
     for keys in ["2\"ax", "\"a2x"] {
@@ -176,7 +174,6 @@ fn a_register_and_a_count_go_in_either_order() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_register_typed_before_an_operator_waits_for_it() {
     let d = Dispatcher::new(registry(), keymap());
     let mut state = d.key_state();
@@ -192,7 +189,6 @@ fn a_register_typed_before_an_operator_waits_for_it() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_pending_register_drops_where_a_count_drops() {
     let d = Dispatcher::new(registry(), keymap());
     // An unbound key, and Escape, which is unbound in normal mode.
@@ -237,7 +233,6 @@ fn a_pending_register_drops_where_a_count_drops() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_command_line_collects_typed_text() {
     let d = Dispatcher::new(registry(), keymap());
     let mut state = d.key_state();
@@ -274,7 +269,6 @@ fn the_command_line_collects_typed_text() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn leaving_the_command_line_drops_it() {
     let mut d = Dispatcher::new(registry(), keymap());
     // Escape.
@@ -310,7 +304,6 @@ fn leaving_the_command_line_drops_it() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dispatch_in_returns_requests_and_dispatch_drops_them() {
     let d = Dispatcher::new(registry(), keymap());
     let (mut set, mut e) = editor("ab");
@@ -353,7 +346,6 @@ fn dispatch_in_returns_requests_and_dispatch_drops_them() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn run_in_passes_the_registry_and_the_session() {
     let registry = registry();
     let (mut set, mut e) = editor("ab");
@@ -401,7 +393,6 @@ fn run_in_passes_the_registry_and_the_session() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn marks_say_which_commands_are_changes() {
     let mut registry = registry();
     assert!(!registry.is_change("test.x"));
@@ -414,7 +405,6 @@ fn marks_say_which_commands_are_changes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_change_is_recorded_as_its_invocations() {
     let mut registry = registry();
     registry.mark_change("test.x");
@@ -462,7 +452,6 @@ fn a_change_is_recorded_as_its_invocations() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_group_closed_from_outside_ends_the_record_at_the_next_run() {
     let mut registry = registry();
     registry.mark_change("test.begin");

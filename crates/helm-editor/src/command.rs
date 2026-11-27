@@ -161,11 +161,6 @@ pub struct CommandRegistry {
     /// `Arc<str>` sorts as `CommandId` does.
     commands: BTreeMap<Arc<str>, Command>,
     /// The ids marked as changes, the commands Vim's `.` repeats (T-109).
-    /// A placeholder: the implementation may reshape it.
-    #[expect(
-        dead_code,
-        reason = "T-109 interface stub; the implementation reads it"
-    )]
     changes: BTreeSet<Arc<str>>,
 }
 
@@ -286,10 +281,6 @@ impl CommandRegistry {
     /// then, or at once if no group was open, the record becomes the
     /// session's [last change](Session::last_change). Runs inside the
     /// replay of `.` are recorded the same way.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn run_in(
         &self,
         invocation: &Invocation,
@@ -297,28 +288,76 @@ impl CommandRegistry {
         set: &mut BufferSet,
         session: &mut Session,
     ) -> Result<Vec<Request>, CommandError> {
-        todo!()
+        let command = self.command(invocation)?;
+        let buffer = editor.buffer();
+        session.end_closed_record(buffer, editor.in_undo_group());
+        // Recorded before it runs, so a command can read the record it is
+        // part of, as Escape does for a counted insert.
+        let recorded = session.is_recording(buffer) || self.is_change(invocation.command.as_str());
+        if recorded {
+            session.record(buffer, invocation);
+        }
+        let mut requests = Vec::new();
+        let result = (command.run)(CommandContext {
+            editor,
+            set,
+            args: &invocation.args,
+            registry: self,
+            session,
+            requests: &mut requests,
+        });
+        if let Err(error) = result {
+            if recorded {
+                session.unrecord(buffer);
+            }
+            return Err(error);
+        }
+        if recorded && !editor.in_undo_group() && session.is_recording(buffer) {
+            session.finish_record();
+        }
+        Ok(requests)
+    }
+
+    /// Runs `invocation`'s command with `session` and `requests` and
+    /// records nothing, as a counted insert's repeats run (T-109).
+    pub(crate) fn run_unrecorded(
+        &self,
+        invocation: &Invocation,
+        editor: &mut Editor,
+        set: &mut BufferSet,
+        session: &mut Session,
+        requests: &mut Vec<Request>,
+    ) -> Result<(), CommandError> {
+        let command = self.command(invocation)?;
+        (command.run)(CommandContext {
+            editor,
+            set,
+            args: &invocation.args,
+            registry: self,
+            session,
+            requests,
+        })
+    }
+
+    /// The command `invocation` names, or the error for an unknown id.
+    fn command(&self, invocation: &Invocation) -> Result<&Command, CommandError> {
+        self.get(invocation.command.as_str())
+            .ok_or_else(|| CommandError::UnknownCommand {
+                id: invocation.command.clone(),
+            })
     }
 
     /// Marks the command with id `id` as a change (T-109): one that Vim's
     /// `.` repeats. Marking an id twice, or one that isn't registered, is
     /// allowed; an unregistered id is never run. Marks are kept apart from
     /// [`Command`], whose fields T-106's tests build by name.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn mark_change(&mut self, id: &str) {
-        todo!()
+        self.changes.insert(Arc::from(id));
     }
 
     /// Whether the command with id `id` is marked as a change (T-109).
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn is_change(&self, id: &str) -> bool {
-        todo!()
+        self.changes.contains(id)
     }
 }
 

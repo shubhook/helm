@@ -9,7 +9,6 @@ mod vim_harness;
 use vim_harness::{Vim, reg_table, table};
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn word_objects_under_d() {
     table(&[
         ("foo b|ar baz", "diw", "foo | baz"),
@@ -31,7 +30,6 @@ fn word_objects_under_d() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn word_objects_with_counts() {
     table(&[
         ("foo b|ar baz qux", "d3iw", "foo | qux"),
@@ -43,7 +41,6 @@ fn word_objects_with_counts() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn bracket_objects_under_d() {
     table(&[
         ("f(a, |b)", "di(", "f(|)"),
@@ -72,7 +69,6 @@ fn bracket_objects_under_d() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_block_of_lines_keeps_its_brackets_on_their_own_lines() {
     table(&[
         ("fn {\n    |a\n    b\n}", "di{", "fn {\n|}"),
@@ -88,7 +84,6 @@ fn a_block_of_lines_keeps_its_brackets_on_their_own_lines() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn quote_objects_under_d() {
     table(&[
         ("s = \"a|b\";", "di\"", "s = \"|\";"),
@@ -108,7 +103,6 @@ fn quote_objects_under_d() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn paragraph_objects_under_d() {
     table(&[
         ("a\n|b\n\nc", "dip", "|\nc"),
@@ -124,7 +118,6 @@ fn paragraph_objects_under_d() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn objects_under_c_enter_insert_mode_in_one_undo_step() {
     table(&[
         ("foo b|ar baz", "ciwX<esc>", "foo |X baz"),
@@ -139,7 +132,6 @@ fn objects_under_c_enter_insert_mode_in_one_undo_step() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn objects_under_y_yank_and_move_to_the_start() {
     reg_table(&[
         ("foo b|ar baz", "yiw", "foo |bar baz", '"', "bar", false),
@@ -153,7 +145,6 @@ fn objects_under_y_yank_and_move_to_the_start() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn objects_in_visual_mode() {
     table(&[
         ("foo b|ar baz", "viwd", "foo | baz"),
@@ -172,7 +163,6 @@ fn objects_in_visual_mode() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn objects_switch_between_the_visual_modes() {
     let mut v = Vim::new("a\n|b\n\nc");
     v.keys("vip");
@@ -189,7 +179,6 @@ fn objects_switch_between_the_visual_modes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn objects_at_several_cursors() {
     table(&[
         ("|ab cd\n|ef gh", "diw", "| cd\n| gh"),
@@ -206,7 +195,6 @@ fn objects_at_several_cursors() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn objects_read_across_long_lines() {
     // Lines longer than a rope chunk, so the readers cross chunks.
     let long = "a".repeat(1500);

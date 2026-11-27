@@ -13,7 +13,7 @@ use crate::{EditorError, Motion, Selection, Selections};
 
 mod vim;
 
-pub(crate) use vim::{Entry, Operator};
+pub(crate) use vim::{Entry, Operator, Target};
 
 /// The selections on one buffer of a [`BufferSet`], and the commands that
 /// edit at every selection or add new ones.

@@ -10,7 +10,6 @@ use helm_editor::{Request, Selection, Selections, Session};
 use vim_harness::{Vim, reg_table, table};
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn y_yanks_without_changing_the_text() {
     reg_table(&[
         ("|ab cd", "yw", "|ab cd", '"', "ab ", false),
@@ -30,7 +29,6 @@ fn y_yanks_without_changing_the_text() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn p_and_p_put_charwise_text() {
     table(&[
         ("|ab", "ylp", "a|ab"),
@@ -45,7 +43,6 @@ fn p_and_p_put_charwise_text() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn p_and_p_put_linewise_text() {
     table(&[
         ("|a\nb", "yyp", "a\n|a\nb"),
@@ -59,7 +56,6 @@ fn p_and_p_put_linewise_text() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn deletes_write_the_numbered_and_small_delete_registers() {
     reg_table(&[
         ("|ab cd", "dw", "|cd", '-', "ab ", false),
@@ -89,7 +85,6 @@ fn deletes_write_the_numbered_and_small_delete_registers() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn named_registers_append_and_the_black_hole() {
     table(&[
         ("|ab cd", "\"ayiww\"ap", "ab ca|bd"),
@@ -106,7 +101,6 @@ fn named_registers_append_and_the_black_hole() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn c_writes_registers_and_puts_after_it() {
     table(&[
         ("|ab cd", "cwX<esc>wp", "X ca|bd"),
@@ -115,7 +109,6 @@ fn c_writes_registers_and_puts_after_it() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn yank_and_put_in_visual_modes() {
     table(&[
         ("a|bc", "vly$p", "abcb|c"),
@@ -134,7 +127,6 @@ fn yank_and_put_in_visual_modes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn several_cursors_put_their_own_pieces() {
     let mut v = Vim::new("|ab\n|cd");
     v.keys("ylp");
@@ -165,7 +157,6 @@ fn several_cursors_put_their_own_pieces() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn every_put_at_every_cursor_is_one_undo_step() {
     let mut v = Vim::new("|a\n|b\n|c");
     v.keys("yl3p");
@@ -175,7 +166,6 @@ fn every_put_at_every_cursor_is_one_undo_step() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn an_empty_register_puts_nothing() {
     table(&[
         ("a|b", "p", "a|b"),
@@ -185,7 +175,6 @@ fn an_empty_register_puts_nothing() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_clipboard_registers_push_requests() {
     let mut v = Vim::new("|ab cd");
     v.keys("\"+yiw");
@@ -212,7 +201,6 @@ fn the_clipboard_registers_push_requests() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_clipboard_text_comes_from_set_clipboard() {
     let mut v = Vim::new("a|b");
     v.session.set_clipboard(Some("XY".to_owned()));
@@ -231,7 +219,6 @@ fn the_clipboard_text_comes_from_set_clipboard() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn text_helm_wrote_keeps_its_pieces_on_the_clipboard() {
     let mut v = Vim::new("|ab\n|cd");
     v.keys("\"+yl");
@@ -248,7 +235,6 @@ fn text_helm_wrote_keeps_its_pieces_on_the_clipboard() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_one_megabyte_clipboard_round_trip_keeps_every_byte() {
     // ED-1: CRLF, lone CR, every char width, and a BOM-looking first char.
     let unit = "\u{feff}ab\r\ncd\re中😀é\n";
@@ -270,7 +256,6 @@ fn a_one_megabyte_clipboard_round_trip_keeps_every_byte() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn registers_are_shared_by_every_editor_on_a_session() {
     let mut a = Vim::new("|ab cd");
     a.keys("\"ayiw");
