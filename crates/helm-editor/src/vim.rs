@@ -356,6 +356,185 @@
 //!
 //! Undoing a visual edit leaves a cursor where the selection began, in
 //! normal mode, as `u` always does.
+//!
+//! # Text objects (T-109)
+//!
+//! An object gives a range from each cursor, charwise or linewise. Under
+//! `d`, `c` or `y` (the object id arrives as
+//! [`CommandArgs::motion`](crate::CommandArgs::motion)) the operator acts
+//! on it, and in a visual mode the selection becomes it. `n` is the count,
+//! and a count before the operator multiplies with it, as for motions. An
+//! object id run on its own does nothing. An object that finds nothing
+//! leaves the text and cursors alone; `c` still opens an undo group and
+//! enters insert mode, as `cj` on the last line does.
+//!
+//! | Keys | Ids | Range |
+//! | --- | --- | --- |
+//! | `iw` `aw` | `vim.inner_word`, `vim.a_word` | words, below |
+//! | `iW` `aW` | `vim.inner_big_word`, `vim.a_big_word` | WORDs, below |
+//! | `i(` `a(`, also `)` and `b` | `vim.inner_paren`, `vim.a_paren` | brackets, below |
+//! | `i[` `a[`, also `]` | `vim.inner_bracket`, `vim.a_bracket` | brackets |
+//! | `i{` `a{`, also `}` and `B` | `vim.inner_brace`, `vim.a_brace` | brackets |
+//! | `i<` `a<`, also `>` | `vim.inner_angle`, `vim.a_angle` | brackets |
+//! | `i"` `a"`, `i'` `a'`, `` i` `` `` a` `` | `vim.inner_double_quote` and the rest | quotes, below |
+//! | `ip` `ap` | `vim.inner_paragraph`, `vim.a_paragraph` | paragraphs, below, linewise |
+//!
+//! **Words.** Runs are T-108's word classes, and white space here is blanks
+//! only: a word object never crosses a line break. `iw` is the run under
+//! the cursor, white space included, and `n` takes `n` runs. `aw` is the
+//! word and the white space after it; on white space, the white space and
+//! the word after it. If there is no white space after (a line break or the
+//! end of the text follows), it takes the white space before the word
+//! instead. `n` takes `n` words. A count that runs past the end of the
+//! line finds nothing (Vim also moves the cursor there; Helm leaves it).
+//!
+//! **Brackets.** The pair of the object's kind that contains the cursor,
+//! counting nested pairs of that kind; a cursor on either bracket is
+//! inside its pair. `n` is the `n`th pair out. Quotes don't hide brackets.
+//! `a` covers both brackets. `i` covers what is between them, except that a
+//! line break right after the opening bracket is left out, and so is a
+//! closing bracket's line when only blanks come before it on that line
+//! (the line break before those blanks is left out too, so the brackets
+//! keep their lines). When both are left out, `i` is linewise over the
+//! lines between, so `di{` on a block of lines leaves `{` and `}` on their
+//! own lines and `ci{` leaves one empty line to type in. An empty `i` finds
+//! nothing. All measured in Vim 9.1.
+//!
+//! **Quotes.** Only within the cursor's line. A quote right after a
+//! backslash doesn't count. On a quote, its index among the line's quotes
+//! says whether it opens or closes. Elsewhere, the quotes are the nearest
+//! one before the cursor and the nearest one after; with none before, the
+//! first pair after the cursor. `a` covers the quotes and the white space
+//! after the closing one, or, if there is none, the white space before the
+//! opening one. `i` with a count of 2 or more covers the quotes without
+//! white space; any other count is ignored.
+//!
+//! **Paragraphs.** A paragraph is a run of lines that aren't blank, and a
+//! run of blank lines (empty, or only white space) is one too. The empty
+//! last line after a final line break is in neither. `ip` is the run under
+//! the cursor, and `n` takes `n` runs. `ap` is that run and the run after
+//! it, or, for the last paragraph with no run after it, the blank run
+//! before it too. `n` repeats that.
+//!
+//! **Under `y`** the cursor goes to the range's start for a charwise
+//! object, and to the first line, same column, for a linewise one. **Under
+//! `d` and `c`** charwise objects use no exclusive-motion special case, and
+//! linewise ones use T-108's linewise delete and change. The record `u`
+//! puts back holds a cursor at each range's start, so `ciwX<Esc>u` leaves
+//! the cursor where the word began, as Vim does.
+//!
+//! **In a visual mode** an object from a one-char selection replaces it,
+//! and from a longer one grows it from the visual cursor: `viwiw` adds the
+//! next run. `ip` and `ap` switch to visual-line mode and the rest to
+//! visual mode, by the binding's `then_mode`, even when the object finds
+//! nothing; then the selection doesn't change. A visual end is never the
+//! line break of a line with text (T-108), so an object range that ends
+//! right after such a break selects up to the char before it.
+//!
+//! # Registers (T-109)
+//!
+//! The registers are in the [`Session`](crate::Session). `"x` before a
+//! command picks register `x`. A register holds one piece per cursor, in
+//! selection order, and whether it is linewise. A linewise piece ends with
+//! a line break, the editor's own if the last line had none.
+//!
+//! What a command writes, from `:help registers`:
+//!
+//! - A yank with no register writes `0`; with one, that one.
+//! - A delete or change with no register writes `1`, after moving `1` to
+//!   `8` into `2` to `9`, when it was linewise or its text holds a line
+//!   break, and `-` otherwise. With a register named, only that one.
+//! - `A` to `Z` append to `a` to `z`. Linewise onto charwise, or the
+//!   reverse, makes the result linewise, each charwise piece ending with a
+//!   line break.
+//! - `_` writes nothing and leaves every register alone.
+//! - `+` and `*` write `+` and push
+//!   [`Request::SetClipboard`](crate::Request::SetClipboard) with the
+//!   joined text.
+//! - Every write except to `_` also sets the unnamed register `"`.
+//!
+//! `x`, `X`, `D`, `C`, `s`, `S` and visual `d`, `x`, `c` and `s` write as
+//! the `d` or `c` they stand for.
+//!
+//! | Keys | Id | What it does |
+//! | --- | --- | --- |
+//! | `y` | `vim.yank` (operator) | Yank the motion's or object's range. `yw` keeps T-108's `w` rule, and `cw`'s rule is only `c`'s. No transaction |
+//! | `yy`, `Y` | `vim.line` under `y`, `vim.yank_line` | Yank `n` lines |
+//! | `p`, `P` | `vim.put_after`, `vim.put_before` | Put the register `n` times after or before each cursor |
+//! | `y` in visual, visual-line | `vim.yank_selection`, `vim.yank_lines` | Yank each selection, or its lines; normal mode, cursor at the selection's start |
+//! | `p` in visual, visual-line | `vim.put_selection`, `vim.put_lines` | Replace each selection, or its lines, with the register, then write the replaced text as a delete does |
+//! | `P` in visual, visual-line | `vim.put_selection_keep`, `vim.put_lines_keep` | The same, writing no register (Vim 9's `v_P`) |
+//!
+//! **Putting.** With as many cursors as pieces, each cursor puts its own;
+//! otherwise each puts every piece, joined by the editor's line break
+//! (charwise) or run together (linewise), which is also the clipboard
+//! text. Charwise text goes after (`p`) or before (`P`) the char under the
+//! cursor, and the cursor ends on its last char, or at its start when it
+//! spans lines. Linewise text goes on new lines below or above, and the
+//! cursor goes to the first non-blank of the first new line; below a last
+//! line with no line break, the line break moves to the front. All cursors'
+//! puts are one transaction. The bytes are the register's exactly: line
+//! breaks aren't converted, so ED-1's round trip keeps every byte. An empty
+//! register puts nothing, and visual `p` with one leaves visual mode and
+//! changes nothing. Linewise text over a charwise selection goes on its
+//! own line, and charwise text over lines gets a line break after it.
+//!
+//! # `.` repeat (T-109)
+//!
+//! `.` (`vim.repeat`) runs the session's
+//! [last change](crate::Session::last_change) again, through
+//! [`CommandRegistry::run_in`](crate::CommandRegistry::run_in), at every
+//! cursor. The changes are the commands
+//! [marked](crate::CommandRegistry::mark_change) in `with_vim_commands`:
+//! `d`, `c`, `x`, `X`, `D`, `C`, `s`, `S`, `p`, `P`, `i`, `a`, `I`, `A`,
+//! `o` and `O`. Motions, `y`, `u`, `ctrl-r`, `.`, `:` and every visual
+//! command are not, so `.` after a visual change repeats the change before
+//! it (Vim repeats the visual change; open question 4).
+//!
+//! - The record is the `Invocation`s exactly as the keys resolved, with
+//!   every `CommandArgs` field. A change that leaves its undo group open
+//!   keeps every later invocation on that editor until the group closes,
+//!   Escape's `vim.normal` included. A group closed some other way ends the
+//!   record at that editor's next command, before it runs.
+//! - `.` with a count replaces the first invocation's count, and the new
+//!   record keeps it. A first invocation naming register `1` to `8` uses the
+//!   next number (`:help redo-register`).
+//! - The replay is recorded like any run, so the last change afterwards is
+//!   the replayed one. `.` ends in normal mode with no group open: if the
+//!   record ended before Escape, `.` closes the group as Escape does.
+//! - Because it replays whole `CommandArgs`, a field added later, such as
+//!   the char `f`, `t` and `r` will need, is replayed with no change here.
+//!
+//! # Counted inserts (T-109)
+//!
+//! `n` before `i`, `a`, `I` or `A` types what was typed `n` times; before
+//! `o` or `O`, each repeat starts with a line break, so `3ox<Esc>` gives
+//! three lines. Escape does the repeats, inside the same undo group, before
+//! it steps back, by running the session's typed invocations again
+//! (Enter, Backspace and Delete included). `c` and its forms keep T-108's
+//! count.
+//!
+//! # The command line (T-109)
+//!
+//! `:` in normal mode switches to [`COMMAND_LINE`], whose typing is
+//! [`Line`](crate::Typing::Line). Enter runs `vim.ex` with the line and
+//! returns to normal mode; Escape returns without running it. `vim.ex`
+//! skips leading `:` and white space, does nothing for an empty line, and
+//! pushes:
+//!
+//! | Line | Requests |
+//! | --- | --- |
+//! | `w`, `write` and its prefixes, `w path`, `w!` | `Save { path, force }` |
+//! | `q`, `quit` and its prefixes, `q!` | `Close { force }` |
+//! | `e`, `edit` and its prefixes, `e path`, `e!` | `Open { path, force }` |
+//! | `wq`, `wq path`, `wq!` | `Save { path, force }`, then `Close { force: false }` |
+//!
+//! The path is the rest of the line, trimmed, taken as it is: spaces are
+//! part of it, and there's no `%` or wildcard expansion. Anything else is
+//! [`CommandError::Ex`](crate::CommandError::Ex): a name Helm doesn't know
+//! ([`ExError::NotACommand`]), a path after `q`
+//! ([`ExError::TrailingCharacters`]), or a range such as `1,3w`
+//! ([`ExError::Range`]).
 
 use crate::{Binding, Keymap, Mode, Typing, editor_commands as editor, vim_commands as ids};
 
@@ -374,6 +553,38 @@ pub const VISUAL_LINE: &str = "visual_line";
 pub const DELETE_PENDING: &str = "delete_pending";
 /// The mode `c` waits for its motion in.
 pub const CHANGE_PENDING: &str = "change_pending";
+/// The mode `y` waits for its motion or text object in (T-109).
+pub const YANK_PENDING: &str = "yank_pending";
+/// The command line after `:` (T-109), whose typing is
+/// [`Line`](crate::Typing::Line).
+pub const COMMAND_LINE: &str = "command_line";
+
+/// Why a command line isn't one Helm runs (T-109), in
+/// [`CommandError::Ex`](crate::CommandError::Ex). See the module docs'
+/// "The command line".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ExError {
+    /// The line doesn't start with a command Helm knows (Vim's E492).
+    NotACommand,
+    /// The command takes no argument and got one, as in `:q file` (Vim's
+    /// E488).
+    TrailingCharacters,
+    /// The line starts with a range, such as `:1,3w`, which Helm doesn't
+    /// support.
+    Range,
+}
+
+impl std::fmt::Display for ExError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NotACommand => "not an editor command",
+            Self::TrailingCharacters => "trailing characters",
+            Self::Range => "ranges are not supported",
+        })
+    }
+}
+
+impl std::error::Error for ExError {}
 
 /// Vim's keymap: the six modes in the module docs, in that order, and the
 /// 115 bindings below. Every binding is scoped to one mode and has no
@@ -423,6 +634,31 @@ pub const CHANGE_PENDING: &str = "change_pending";
 /// **Insert mode** (4): `escape` runs `vim.normal` then mode `normal`, and
 /// `enter`, `backspace` and `delete` run `editor.newline`,
 /// `editor.delete_backward` and `editor.delete_forward`.
+///
+/// **T-109 adds** (391 bindings, after these 115, and two modes,
+/// [`YANK_PENDING`] with typing `Count` and [`COMMAND_LINE`] with typing
+/// `Line`). Whether they join this function or a new one is open question 2
+/// of `tasks/109-vim-objects.md`, since T-108's tests pin this one at 115:
+///
+/// - Normal mode: `y` operator `vim.yank` then `yank_pending`; `Y`, `p`,
+///   `P`, `.` run `vim.yank_line`, `vim.put_after`, `vim.put_before`,
+///   `vim.repeat`; `:` switches to `command_line`.
+/// - Yank-pending mode: each motion key runs its motion, and `y` runs
+///   `vim.line`.
+/// - Command-line mode: `enter` runs `vim.ex` then `normal`; `escape`
+///   switches to `normal`.
+/// - Visual mode: `y`, `p`, `P` run `vim.yank_selection`,
+///   `vim.put_selection`, `vim.put_selection_keep`, then `normal`.
+///   Visual-line mode: `vim.yank_lines`, `vim.put_lines`,
+///   `vim.put_lines_keep`, then `normal`.
+/// - Normal, visual and visual-line modes: `" x` holds register `x`, for
+///   `a`-`z`, `A`-`Z`, `0`-`9`, `"`, `-`, `_`, `+` and `*` (67 each).
+/// - The 32 object chords (`i` or `a`, then `w` `W` `(` `)` `b` `[` `]`
+///   `{` `}` `B` `<` `>` `"` `'` `` ` `` `p`): in `delete_pending` and
+///   `yank_pending` they run the object id; in `change_pending` the same,
+///   then `insert`; in `visual` and `visual_line` they run its
+///   `vim.select_` id, with then-mode `visual_line` for `ip`/`ap` in
+///   visual mode and `visual` for the rest in visual-line mode.
 ///
 /// Every command it binds is in
 /// [`CommandRegistry::with_vim_commands`](crate::CommandRegistry::with_vim_commands).
