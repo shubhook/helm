@@ -8,15 +8,16 @@ What v1 must do is in [docs/prd.md](docs/prd.md). How it gets built is in [docs/
 
 Phase 1 (headless core) is in progress. There is no window yet, so there is nothing to run as an app.
 
+- T-006 Main's benchmark baseline in `crates/helm-bench/baselines/` — done
 - T-101 Buffer trait and offset conversions — done
 - T-102 Transactions with undo and redo — done
 - T-103 Snapshots and concurrent readers — done
 - T-104 Line endings and BOM preservation — done
 - T-105 Selections and multiple cursors — done
 - T-106 Command registry and keymap engine — done
-- T-107 VS Code bindings — in progress
-- T-108 Vim modes, motions, operators and counts — not started
-- T-109 Vim text objects, registers, repeat and commands — not started
+- T-107 VS Code bindings — done
+- T-108 Vim modes, motions, operators and counts — done
+- T-109 Vim text objects, registers, repeat and commands — in progress
 - T-110 Amend a transaction, so a run of keystrokes undoes in one step — done
 
 ## Crates
