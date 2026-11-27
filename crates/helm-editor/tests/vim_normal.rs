@@ -392,7 +392,10 @@ fn db_and_de() {
         ("|foo bar", "de", "| bar"),
         ("fo|o bar", "de", "f|o"),
         ("|ab cd ef", "d2e", "| ef"),
-        ("foo ba|r", "de", "foo ba|r"),
+        ("foo ba|r", "de", "foo b|a"),
+        ("foo ba|r", "dE", "foo b|a"),
+        ("foo ba|r", "ceX<esc>", "foo ba|X"),
+        ("a |b", "de", "a| "),
         ("|a.b c", "dE", "| c"),
         ("a.b |c", "dB", "|c"),
     ]);

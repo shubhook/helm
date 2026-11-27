@@ -193,8 +193,9 @@
 //!   and `E` are inclusive.
 //! - **Linewise:** every line from `p`'s line to `t`'s.
 //!
-//! A charwise operator with an empty range does nothing, and so does one
-//! whose `e` or `E` doesn't move.
+//! A charwise operator with an empty range does nothing. An `e` or `E`
+//! that finds no next run, under an operator, ends on the char under the
+//! cursor, so `de` on the last char of the text deletes it, as in Vim.
 //!
 //! Vim's special cases, from its documentation:
 //!
@@ -340,9 +341,6 @@
 //!   in Vim.
 //! - `ctrl-r` leaves the cursor after the redone text.
 //! - `cj` and `ck` that find nothing enter insert mode.
-//! - `de` and `dE` on the last char of the text delete nothing here and
-//!   delete that char in Vim. That row is pinned by the tests and held for
-//!   Khakha.
 //!
 //! # Visual-mode commands
 //!

@@ -265,9 +265,9 @@ impl<'a> Text<'a> {
     }
 
     /// What `d{key}` deletes from `p`: a byte range and whether it was
-    /// linewise. `None` when nothing is deleted. `Err` for `de` and `dE`
-    /// where `e` can't move: the spec leaves that to Khakha (finding 2 of
-    /// the council round), so the property doesn't check it.
+    /// linewise. `None` when nothing is deleted. Always `Ok`: an `e` or `E`
+    /// that can't move ends on the char under the cursor, as Khakha's
+    /// answer to question 3 of PR #37 says.
     fn delete(
         &self,
         p: usize,
@@ -294,9 +294,6 @@ impl<'a> Text<'a> {
             }
             "e" | "E" => {
                 let t = self.target(p, key, count).unwrap();
-                if t == p {
-                    return Err(());
-                }
                 return Ok(Some((p, self.next(t), false)));
             }
             "$" => {
