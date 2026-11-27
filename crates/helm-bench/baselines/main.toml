@@ -1,0 +1,117 @@
+# Benchmark times on main, recorded by CI's bench-record job. T-006.
+#
+# Written by refresh.sh from the artifact named below. Don't edit by hand:
+# rerun refresh.sh with a newer main commit instead. No check reads this
+# file, and bench-compare never compares a PR with it.
+#
+# Times are nanoseconds per iteration. Each interval is criterion's 95%
+# bootstrap confidence interval. bench-compare gates on the median; the mean
+# is here too because criterion reports it.
+
+[source]
+commit = "5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96"
+artifact = "criterion-5f0c4259bc1d7bdc383bcd46c61d1343bc6f0d96"
+artifact_id = 15093909343
+artifact_created = "2026-11-26T07:07:08Z"
+run = "https://github.com/shubhook/helm/actions/runs/45772477109"
+job = "https://github.com/shubhook/helm/actions/runs/45772477109/job/139748151308"
+runner_label = "ubuntu-latest"
+runner_name = "GitHub Actions 1000001825"
+runner_image = "ubuntu-26.04 20261122.9.1"
+bench_flags = "--warm-up-time 3 --measurement-time 10"
+
+[benchmarks."amend/type_100_chars_undo_10mb"]
+mean = 88716.56858375517
+mean_lower = 87968.63327156044
+mean_upper = 89884.4548926339
+median = 87744.38636363635
+median_lower = 87489.37373737374
+median_upper = 88273.5993939394
+
+[benchmarks."cursor/down_up_1000_cursors_10mb"]
+mean = 296879.34006863344
+mean_lower = 295537.33173109323
+mean_upper = 298530.91925943823
+median = 295580.4750200642
+median_lower = 294715.987012987
+median_upper = 296553.55816326535
+
+[benchmarks."cursor/word_right_1000_cursors_10mb"]
+mean = 214145.71210589368
+mean_lower = 213282.99560625025
+mean_upper = 215485.41789032824
+median = 213283.50900000002
+median_lower = 212984.63043478262
+median_upper = 213645.98661257606
+
+[benchmarks."editor/type_undo_1000_cursors_10mb"]
+mean = 1162091.2718775556
+mean_lower = 1160258.4226280104
+mean_upper = 1164462.8445191374
+median = 1159900.3291666666
+median_lower = 1159339.2419354839
+median_upper = 1161054.811764706
+
+[benchmarks."encoding/decode_encode_bom_10mb"]
+mean = 10172981.982999995
+mean_lower = 10131541.749875
+mean_upper = 10216244.828650001
+median = 10163292.1
+median_lower = 10105619.25
+median_upper = 10196920.85
+
+[benchmarks."keymap/resolve_10k_keys_300_bindings"]
+mean = 862263.131128224
+mean_lower = 860312.8474007047
+mean_upper = 864794.2453817653
+median = 860258.4318181819
+median_lower = 857145.2962962963
+median_upper = 863293.2564102564
+
+[benchmarks."snapshots/apply_undo_holding_snapshot_10mb"]
+mean = 1446.9227901363981
+mean_lower = 1444.7229697962796
+mean_upper = 1449.374830515272
+median = 1444.7855651447662
+median_lower = 1443.4116555308092
+median_upper = 1448.055002968343
+
+[benchmarks."snapshots/snapshot_1024x_10mb"]
+mean = 16877.61172884494
+mean_lower = 16795.736676670043
+mean_upper = 16974.987597569565
+median = 16758.125478489157
+median_lower = 16704.017689132103
+median_upper = 16801.200615722
+
+[benchmarks."text/byte_to_line_10mb"]
+mean = 128046.33677284438
+mean_lower = 127803.21922624401
+mean_upper = 128389.36012422381
+median = 127829.88214285715
+median_lower = 127760.26449275362
+median_upper = 127909.30546212924
+
+[benchmarks."text/insert_middle_10mb"]
+mean = 3728.190504140325
+mean_lower = 3625.7611855110167
+mean_upper = 3810.479508950721
+median = 3860.048809267094
+median_lower = 3842.5718130223618
+median_upper = 3873.6096851736975
+
+[benchmarks."text/utf16_to_byte_10mb"]
+mean = 388611.7520549053
+mean_lower = 387826.7450354117
+mean_upper = 389578.26742816524
+median = 387467.9668668955
+median_lower = 387196.0638586957
+median_upper = 387600.98425925925
+
+[benchmarks."transactions/apply_undo_100_edits_10mb"]
+mean = 65402.46396169615
+mean_lower = 65271.50447380041
+mean_upper = 65573.99514385851
+median = 65202.73785647499
+median_lower = 65140.2387345679
+median_upper = 65238.71890096618
