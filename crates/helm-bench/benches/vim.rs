@@ -178,41 +178,38 @@ fn vim(c: &mut Criterion) {
     );
 
     // `999999j` takes every cursor to the last line, where they merge, so
-    // each iteration starts again from the 1,000 cursors, put back outside
-    // the timed code. So do the next two.
-    let mut editor = editor_at(&selections);
+    // each iteration starts from a new editor with the 1,000 cursors, built
+    // and dropped outside the timed code. So do the next two.
     group.bench_function("counted_j_k_1000_cursors_10mb", |bench| {
         bench.iter_batched(
-            || selections.clone(),
-            |start| {
-                editor.set_selections(start);
+            || editor_at(&selections),
+            |mut editor| {
                 run(&mut editor, &mut set, &down);
                 run(&mut editor, &mut set, &up);
+                editor
             },
             BatchSize::SmallInput,
         )
     });
 
-    let mut editor = editor_at(&selections);
     group.bench_function("gg_G_1000_cursors_10mb", |bench| {
         bench.iter_batched(
-            || selections.clone(),
-            |start| {
-                editor.set_selections(start);
+            || editor_at(&selections),
+            |mut editor| {
                 run(&mut editor, &mut set, &first);
                 run(&mut editor, &mut set, &last);
+                editor
             },
             BatchSize::SmallInput,
         )
     });
 
-    let mut editor = editor_at(&selections);
     group.bench_function("counted_dollar_1000_cursors_10mb", |bench| {
         bench.iter_batched(
-            || selections.clone(),
-            |start| {
-                editor.set_selections(start);
+            || editor_at(&selections),
+            |mut editor| {
                 run(&mut editor, &mut set, &dollar);
+                editor
             },
             BatchSize::SmallInput,
         )
