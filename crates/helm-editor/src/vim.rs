@@ -17,6 +17,8 @@
 //! | [`VISUAL_LINE`] | `Count` | `V`: a selection of whole lines. |
 //! | [`DELETE_PENDING`] | `Count` | `d` is waiting for its motion. |
 //! | [`CHANGE_PENDING`] | `Count` | `c` is waiting for its motion. |
+//! | [`YANK_PENDING`] | `Count` | `y` is waiting for its motion or object (T-109). |
+//! | [`COMMAND_LINE`] | [`Line`](crate::Typing::Line) | The command line after `:` (T-109). |
 //!
 //! The mode lives in the editor's [`KeyState`](crate::KeyState), not in
 //! the [`Editor`](crate::Editor). The commands don't know the mode: each
@@ -613,8 +615,9 @@ impl std::fmt::Display for ExError {
 
 impl std::error::Error for ExError {}
 
-/// Vim's keymap: the six modes in the module docs, in that order, and the
-/// 115 bindings below. Every binding is scoped to one mode and has no
+/// Vim's keymap: the six modes in the module docs, in that order, then
+/// [`YANK_PENDING`] and [`COMMAND_LINE`], and the 115 bindings below, then
+/// T-109's 391. Every binding is scoped to one mode and has no
 /// context. Keys are in [`KeySequence`](crate::KeySequence) notation, where
 /// Shift is folded into chars, so `G` is Shift+G and `$` is whatever key
 /// types `$`.
@@ -662,10 +665,10 @@ impl std::error::Error for ExError {}
 /// `enter`, `backspace` and `delete` run `editor.newline`,
 /// `editor.delete_backward` and `editor.delete_forward`.
 ///
-/// **T-109 adds** (391 bindings, after these 115, and two modes,
-/// [`YANK_PENDING`] with typing `Count` and [`COMMAND_LINE`] with typing
-/// `Line`). Whether they join this function or a new one is open question 2
-/// of `tasks/109-vim-objects.md`, since T-108's tests pin this one at 115:
+/// **T-109 adds** 391 bindings, after these 115, and two modes after these
+/// six, [`YANK_PENDING`] with typing `Count` and [`COMMAND_LINE`] with
+/// typing `Line`, so the keymap has eight modes and 506 bindings (Khakha's
+/// answer to question 2 of `tasks/109-vim-objects.md`):
 ///
 /// - Normal mode: `y` operator `vim.yank` then `yank_pending`; `Y`, `p`,
 ///   `P`, `.` run `vim.yank_line`, `vim.put_after`, `vim.put_before`,

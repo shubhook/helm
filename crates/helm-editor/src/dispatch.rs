@@ -285,13 +285,11 @@ impl Dispatcher {
     ///
     /// # Registers (T-109)
     ///
-    /// A `Run` carries the pending register as its register argument and
-    /// clears it. A register typed before an operator moves onto it, so
-    /// `" a d w` gives `vim.delete` with register `a`, and a count can come
-    /// before or after the register: `2 " a y y` and `" a 2 y y` give the
-    /// same `Run`. Where the register argument lives is open question 1 of
-    /// `tasks/109-vim-objects.md`: a `CommandArgs` field needs Khakha's
-    /// grant to edit `tests/commands.rs`.
+    /// A `Run` carries the pending register as its
+    /// [`CommandArgs::register`](crate::CommandArgs::register) and clears
+    /// it. A register typed before an operator moves onto it, so `" a d w`
+    /// gives `vim.delete` with register `a`, and a count can come before or
+    /// after the register: `2 " a y y` and `" a 2 y y` give the same `Run`.
     ///
     /// # The command line (T-109)
     ///
@@ -375,9 +373,9 @@ impl Dispatcher {
                         Resolution::Run(Invocation {
                             command: operator,
                             args: CommandArgs {
-                                text: None,
                                 motion: Some(command.clone()),
                                 count,
+                                ..CommandArgs::default()
                             },
                         })
                     }

@@ -53,8 +53,8 @@ impl fmt::Display for CommandId {
 }
 
 /// What a command gets besides the editor: the text to type, the motion a
-/// pending operator runs over, and the count typed before it. A command
-/// ignores what it doesn't use.
+/// pending operator runs over, the count typed before it, and the register
+/// named before it. A command ignores what it doesn't use.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CommandArgs {
     /// The text [`editor_commands::INSERT`](crate::editor_commands::INSERT)
@@ -73,6 +73,11 @@ pub struct CommandArgs {
     /// operator 6. A command that takes no count ignores it. One that does
     /// reads `None` as its default, usually 1.
     pub count: Option<usize>,
+    /// The register named before the command (T-109), or `None` if none
+    /// was: `'a'` after Vim's `" a`.
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) says where it
+    /// comes from. Vim's `.` replays it with the rest of the arguments.
+    pub register: Option<char>,
 }
 
 /// One command to run, with its arguments.
@@ -103,8 +108,7 @@ impl Invocation {
             command: CommandId::from(editor_commands::INSERT),
             args: CommandArgs {
                 text: Some(text.into()),
-                motion: None,
-                count: None,
+                ..CommandArgs::default()
             },
         }
     }
@@ -200,7 +204,7 @@ impl CommandRegistry {
     /// [`with_all_commands`](Self::with_all_commands) and the Vim commands
     /// under the ids in [`vim_commands`](crate::vim_commands) (T-108):
     /// every command the [`vscode`](crate::vscode) and [`vim`](crate::vim)
-    /// keymaps bind, 91 in all. One dispatcher built with it can switch
+    /// keymaps bind, 143 in all. One dispatcher built with it can switch
     /// between the two keymaps at runtime (ED-6). This is the registry
     /// `helm-ui` builds its dispatcher with.
     pub fn with_vim_commands() -> Self {

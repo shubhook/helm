@@ -2,7 +2,7 @@
 
 After: T-108. T-108 is merged (`4e92574`). This spec is written against main at `11010ce`, where Khakha's grants on PR #37 are in: the count is `CommandArgs::count`, Vim's motions are command ids with a crate-private enum, and `de` and `dE` at the end of the text delete the last char.
 
-**The implementation can't start until open questions 1 and 2 are answered.** Both need a written grant to edit a protected T-106 or T-108 test file, or a choice of the alternative. This spec PR settles neither: it compiles without either edit, as "Crates and public interface" explains.
+**Open questions 1 and 2 are answered.** Khakha granted the `tests/commands.rs` edit (question 1) and chose option (a) for `tests/vim_keymap.rs` (question 2); see "Open questions for Khakha". The spec PR compiled without either edit, as "Crates and public interface" explains, and the implementation PR makes both.
 
 ## Goal
 
@@ -215,12 +215,23 @@ As in T-101 to T-108, the implementation PR adds the benchmark file. This spec P
 
 ## Open questions for Khakha
 
-Questions 1 and 2 **block the implementation**: each needs a written grant to edit a protected test file, or the alternative. Questions 3 to 8 don't block; the spec states a default for each, and the implementation follows it unless you say otherwise.
+Questions 1 and 2 blocked the implementation, and Khakha has answered both. Questions 3 to 8 don't block; Khakha kept the spec's default for each.
 
-1. **`CommandArgs::register` and the `tests/commands.rs` literals (blocking).** The register must travel with the invocation so `.` replays it, as the count does. Would you grant replacing `count: None` with `..CommandArgs::default()` in the two `CommandArgs` literals of `tests/commands.rs` (lines 266 and 289), with no assertion changed? Then the register now, and the char argument for `f`, `t` and `r` later, need no further grant. The alternatives are granting `register: None` now and asking again later, or no grant, in which case the register travels outside `CommandArgs` (in `CommandContext`, with `.` recording it beside each invocation) and `Resolution::Run` can't carry it, so `resolve` would need another way to hand it out.
-2. **T-108's pinned keymap and lists (blocking).** T-109 adds two modes, 391 bindings, 52 ids and 52 commands.
+Khakha's answers, as written:
+
+> Answers to tasks/109-vim-objects.md's open questions, from Khakha:
+> - Question 1: Granted. In crates/helm-editor/tests/commands.rs, replace count: None with ..CommandArgs::default() in the two CommandArgs literals (lines 266 and 289). No assertion changes. Add CommandArgs::register.
+> - Question 2: Option (a), granted. Edit crates/helm-editor/tests/vim_keymap.rs so vim_commands::ALL is 107 ids, with_vim_commands() is 143 commands, and the_keymap_has_vims_modes and the_keymap_has_exactly_the_documented_bindings describe the full keymap. T-108's 115 documented binding rows stay unchanged. Add the T-109 ids, bindings and commands to ALL, vim::keymap() and with_vim_commands(), and keep tests/vim_harness/mod.rs naming them.
+> - Questions 3 to 8: keep the spec's defaults.
+
+1. **`CommandArgs::register` and the `tests/commands.rs` literals (answered: granted).** The register must travel with the invocation so `.` replays it, as the count does. Would you grant replacing `count: None` with `..CommandArgs::default()` in the two `CommandArgs` literals of `tests/commands.rs` (lines 266 and 289), with no assertion changed? Then the register now, and the char argument for `f`, `t` and `r` later, need no further grant. The alternatives are granting `register: None` now and asking again later, or no grant, in which case the register travels outside `CommandArgs` (in `CommandContext`, with `.` recording it beside each invocation) and `Resolution::Run` can't carry it, so `resolve` would need another way to hand it out.
+
+   Khakha granted the edit: the register is `CommandArgs::register`.
+2. **T-108's pinned keymap and lists (answered: option (a)).** T-109 adds two modes, 391 bindings, 52 ids and 52 commands.
    - (a) Grant edits to `tests/vim_keymap.rs` so `vim_commands::ALL` grows to 107 ids, `with_vim_commands` to 143 commands, and `the_keymap_has_vims_modes` and `the_keymap_has_exactly_the_documented_bindings` describe the full keymap; the documented 115 rows stay as they are. I recommend this: one keymap, one id list, one registry.
    - (b) No test edits: `vim::keymap()`, `ALL` and `with_vim_commands()` keep T-108's contents, and T-109 adds a second keymap function, a second id list and a fourth registry constructor for `helm-ui`. Every later Vim task would add another layer.
+
+   Khakha chose (a): `ALL` is 107 ids, `with_vim_commands()` 143 commands, and `vim::keymap()` eight modes and 506 bindings, T-108's 115 rows first and unchanged.
 3. **Request shape (default: as stubbed).** `Save`, `Close`, `Open` and `SetClipboard`, with `PathBuf` paths and a `force` flag, and `:q` closing the editor while `helm-ui` decides about the window.
 4. **`.` after a visual change (default: out of T-109).** Vim repeats it over the same amount of text from the cursor (`:help visual-repeat`). Include it now, or a later task?
 5. **Unnamed register and the clipboard (default: kept apart).** As in Vim by default; `clipboard=unnamed` would be a later setting.

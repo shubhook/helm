@@ -138,9 +138,8 @@ pub const UNDO: &str = "vim.undo";
 /// `ctrl-r`: redo `n` times.
 pub const REDO: &str = "vim.redo";
 
-// T-109. These ids aren't in `ALL` yet: whether `ALL` grows or a second
-// list holds them is open question 2 of `tasks/109-vim-objects.md`, since
-// T-108's `tests/vim_keymap.rs` pins `ALL` at 55 ids.
+// T-109's 52 ids. They join `ALL`, as Khakha's answer to question 2 of
+// `tasks/109-vim-objects.md` grants.
 
 /// `y`: the yank operator, waiting in `yank_pending` for a motion or a
 /// text object (T-109).
