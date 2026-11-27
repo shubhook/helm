@@ -1,14 +1,17 @@
 //! The command registry: every command has a stable string id, and runs
 //! against one [`Editor`] and the [`BufferSet`] that owns its buffer.
 
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
 use helm_text::BufferSet;
 
-use crate::{Editor, EditorError, cursor_commands, editor_commands, vim_commands};
+use crate::vim::ExError;
+use crate::{
+    Editor, EditorError, Request, Session, cursor_commands, editor_commands, vim_commands,
+};
 
 /// A command's id, such as `"editor.delete_backward"`. Keymaps, the
 /// keybindings file and the command palette name commands by id, so an id
@@ -115,6 +118,16 @@ pub struct CommandContext<'a> {
     pub set: &'a mut BufferSet,
     /// The invocation's arguments, its count included.
     pub args: &'a CommandArgs,
+    /// The registry the command runs from (T-109), so a command such as
+    /// Vim's `.` can run other commands through
+    /// [`CommandRegistry::run_in`].
+    pub registry: &'a CommandRegistry,
+    /// The state every editor shares (T-109): Vim's registers and its last
+    /// change.
+    pub session: &'a mut Session,
+    /// Where the command puts what only `helm-ui` can do (T-109), such as
+    /// saving a file. A command that errors pushes nothing.
+    pub requests: &'a mut Vec<Request>,
 }
 
 /// The function a command runs. Plain function pointers keep commands
@@ -143,6 +156,13 @@ pub struct CommandRegistry {
     /// Keyed by the id's text, so [`get`](Self::get) looks up a `&str`.
     /// `Arc<str>` sorts as `CommandId` does.
     commands: BTreeMap<Arc<str>, Command>,
+    /// The ids marked as changes, the commands Vim's `.` repeats (T-109).
+    /// A placeholder: the implementation may reshape it.
+    #[expect(
+        dead_code,
+        reason = "T-109 interface stub; the implementation reads it"
+    )]
+    changes: BTreeSet<Arc<str>>,
 }
 
 impl CommandRegistry {
@@ -222,6 +242,11 @@ impl CommandRegistry {
     ///
     /// The command gets the invocation's arguments, so a count typed before
     /// it arrives as [`CommandArgs::count`].
+    ///
+    /// It runs with a fresh [`Session`], dropped afterwards with the
+    /// [`Request`]s the command made (T-109). This is
+    /// [`run_in`](Self::run_in) for callers with no session, such as VS
+    /// Code's commands and the T-106 to T-108 tests.
     pub fn run(
         &self,
         invocation: &Invocation,
@@ -233,11 +258,63 @@ impl CommandRegistry {
                 .ok_or_else(|| CommandError::UnknownCommand {
                     id: invocation.command.clone(),
                 })?;
+        let mut session = Session::new();
+        let mut requests = Vec::new();
         (command.run)(CommandContext {
             editor,
             set,
             args: &invocation.args,
+            registry: self,
+            session: &mut session,
+            requests: &mut requests,
         })
+    }
+
+    /// Runs `invocation`'s command on `editor`, `set` and `session`, and
+    /// returns the [`Request`]s it made, in order (T-109). Errors as
+    /// [`run`](Self::run) does, and returns no request then.
+    ///
+    /// It also keeps the record Vim's `.` repeats, as the
+    /// [`vim`](crate::vim) module docs' "`.` repeat" says. In short: a
+    /// successful run of a command [marked as a change](Self::mark_change)
+    /// starts a record. If the editor's undo group is open after it, every
+    /// later run on that editor joins the record until the group closes;
+    /// then, or at once if no group was open, the record becomes the
+    /// session's [last change](Session::last_change). Runs inside the
+    /// replay of `.` are recorded the same way.
+    #[expect(
+        unused_variables,
+        reason = "T-109 interface stub; the implementation deletes this"
+    )]
+    pub fn run_in(
+        &self,
+        invocation: &Invocation,
+        editor: &mut Editor,
+        set: &mut BufferSet,
+        session: &mut Session,
+    ) -> Result<Vec<Request>, CommandError> {
+        todo!()
+    }
+
+    /// Marks the command with id `id` as a change (T-109): one that Vim's
+    /// `.` repeats. Marking an id twice, or one that isn't registered, is
+    /// allowed; an unregistered id is never run. Marks are kept apart from
+    /// [`Command`], whose fields T-106's tests build by name.
+    #[expect(
+        unused_variables,
+        reason = "T-109 interface stub; the implementation deletes this"
+    )]
+    pub fn mark_change(&mut self, id: &str) {
+        todo!()
+    }
+
+    /// Whether the command with id `id` is marked as a change (T-109).
+    #[expect(
+        unused_variables,
+        reason = "T-109 interface stub; the implementation deletes this"
+    )]
+    pub fn is_change(&self, id: &str) -> bool {
+        todo!()
     }
 }
 
@@ -299,6 +376,14 @@ pub enum CommandError {
     },
     /// The editor command failed.
     Editor(EditorError),
+    /// A Vim command line that isn't one Helm runs (T-109), such as `:foo`
+    /// or `:q file`. Nothing changed and no request was made.
+    Ex {
+        /// The line as typed, without the `:`.
+        line: String,
+        /// What is wrong with it.
+        error: ExError,
+    },
 }
 
 impl From<EditorError> for CommandError {
@@ -317,6 +402,7 @@ impl fmt::Display for CommandError {
                 write!(f, "command {:?} needs text and got none", id.as_str())
             }
             Self::Editor(error) => write!(f, "editor command failed: {error}"),
+            Self::Ex { line, error } => write!(f, ":{line}: {error}"),
         }
     }
 }

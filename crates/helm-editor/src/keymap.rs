@@ -61,6 +61,22 @@ pub enum Typing {
     /// rule, and [`KeyState::count`](crate::KeyState::count) shows the
     /// count.
     Count,
+    /// Typed text goes into the state's line instead of the buffer (T-109).
+    /// Vim's command line, after `:`.
+    ///
+    /// A key no binding matches types its
+    /// [`KeyEvent::text`](crate::KeyEvent::text) onto the end of the line,
+    /// if it has any and Ctrl and Cmd aren't held: `Pending`. An unbound
+    /// Backspace with no modifiers removes the line's last char, or, on an
+    /// empty line, returns to the mode the line was entered from:
+    /// `Pending` or `Done`. A [`Run`](crate::Resolution::Run) from this
+    /// mode carries the line as its
+    /// [`CommandArgs::text`](crate::CommandArgs::text). Leaving the mode by
+    /// any route clears the line.
+    /// [`KeyState::line`](crate::KeyState::line) shows it, and
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) has the full
+    /// rule.
+    Line,
 }
 
 /// One mode of a keymap. A mode is data: its id and what typing does in
@@ -92,6 +108,14 @@ pub enum Action {
     /// Hold the command as the pending operator, such as Vim's `d`. Nothing
     /// runs until a key bound to [`Action::Run`] gives it a motion.
     Operator(CommandId),
+    /// Hold a register name for the next command (T-109), such as Vim's
+    /// `"a`. Nothing runs. The name goes with the next
+    /// [`Action::Run`] or [`Action::Operator`], as a count does, and is
+    /// dropped wherever a pending count is dropped.
+    /// [`KeyState::register`](crate::KeyState::register) shows it, and
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) has the full
+    /// rule.
+    Register(char),
 }
 
 /// One binding: a key sequence, where it applies, and what it does.
@@ -128,6 +152,12 @@ impl Binding {
     /// mode and context.
     pub fn operator(keys: &str, command: impl Into<CommandId>) -> Result<Self, KeyParseError> {
         Self::with_action(keys, Some(Action::Operator(command.into())))
+    }
+
+    /// Keys `keys` that hold register `name` for the next command
+    /// (T-109), in every mode and context.
+    pub fn register(keys: &str, name: char) -> Result<Self, KeyParseError> {
+        Self::with_action(keys, Some(Action::Register(name)))
     }
 
     /// Keys `keys` that only switch to mode `mode`, in every mode and

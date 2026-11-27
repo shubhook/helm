@@ -138,6 +138,121 @@ pub const UNDO: &str = "vim.undo";
 /// `ctrl-r`: redo `n` times.
 pub const REDO: &str = "vim.redo";
 
+// T-109. These ids aren't in `ALL` yet: whether `ALL` grows or a second
+// list holds them is open question 2 of `tasks/109-vim-objects.md`, since
+// T-108's `tests/vim_keymap.rs` pins `ALL` at 55 ids.
+
+/// `y`: the yank operator, waiting in `yank_pending` for a motion or a
+/// text object (T-109).
+pub const YANK: &str = "vim.yank";
+/// `Y`: yank `n` lines, as `yy` (T-109).
+pub const YANK_LINE: &str = "vim.yank_line";
+/// `p`: put the register after the cursor, or below its line (T-109).
+pub const PUT_AFTER: &str = "vim.put_after";
+/// `P`: put the register before the cursor, or above its line (T-109).
+pub const PUT_BEFORE: &str = "vim.put_before";
+/// `y` in visual mode: yank each selection (T-109).
+pub const YANK_SELECTION: &str = "vim.yank_selection";
+/// `y` in visual-line mode: yank each selection's lines (T-109).
+pub const YANK_LINES: &str = "vim.yank_lines";
+/// `p` in visual mode: replace each selection with the register, then
+/// write the replaced text as a delete does (T-109).
+pub const PUT_SELECTION: &str = "vim.put_selection";
+/// `P` in visual mode: replace each selection with the register, writing
+/// no register (T-109).
+pub const PUT_SELECTION_KEEP: &str = "vim.put_selection_keep";
+/// `p` in visual-line mode: replace each selection's lines (T-109).
+pub const PUT_LINES: &str = "vim.put_lines";
+/// `P` in visual-line mode: replace each selection's lines, writing no
+/// register (T-109).
+pub const PUT_LINES_KEEP: &str = "vim.put_lines_keep";
+/// `.`: run the last change again (T-109).
+pub const REPEAT: &str = "vim.repeat";
+/// Enter in the command line: run the line, `:w`, `:q`, `:e` and the rest
+/// (T-109).
+pub const EX: &str = "vim.ex";
+
+/// `iw` under an operator: inside the word, or the run of white space, under the cursor (T-109).
+pub const INNER_WORD: &str = "vim.inner_word";
+/// `aw` under an operator: all of the word, or the run of white space, under the cursor (T-109).
+pub const A_WORD: &str = "vim.a_word";
+/// `iw` in a visual mode: select inside the word, or the run of white space, under the cursor (T-109).
+pub const SELECT_INNER_WORD: &str = "vim.select_inner_word";
+/// `aw` in a visual mode: select all of the word, or the run of white space, under the cursor (T-109).
+pub const SELECT_A_WORD: &str = "vim.select_a_word";
+/// `iW` under an operator: inside the WORD, or the run of white space, under the cursor (T-109).
+pub const INNER_BIG_WORD: &str = "vim.inner_big_word";
+/// `aW` under an operator: all of the WORD, or the run of white space, under the cursor (T-109).
+pub const A_BIG_WORD: &str = "vim.a_big_word";
+/// `iW` in a visual mode: select inside the WORD, or the run of white space, under the cursor (T-109).
+pub const SELECT_INNER_BIG_WORD: &str = "vim.select_inner_big_word";
+/// `aW` in a visual mode: select all of the WORD, or the run of white space, under the cursor (T-109).
+pub const SELECT_A_BIG_WORD: &str = "vim.select_a_big_word";
+/// `i(`, `i)`, `ib` under an operator: inside the `(` `)` pair around the cursor (T-109).
+pub const INNER_PAREN: &str = "vim.inner_paren";
+/// `a(`, `a)`, `ab` under an operator: all of the `(` `)` pair around the cursor (T-109).
+pub const A_PAREN: &str = "vim.a_paren";
+/// `i(`, `i)`, `ib` in a visual mode: select inside the `(` `)` pair around the cursor (T-109).
+pub const SELECT_INNER_PAREN: &str = "vim.select_inner_paren";
+/// `a(`, `a)`, `ab` in a visual mode: select all of the `(` `)` pair around the cursor (T-109).
+pub const SELECT_A_PAREN: &str = "vim.select_a_paren";
+/// `i[`, `i]` under an operator: inside the `[` `]` pair around the cursor (T-109).
+pub const INNER_BRACKET: &str = "vim.inner_bracket";
+/// `a[`, `a]` under an operator: all of the `[` `]` pair around the cursor (T-109).
+pub const A_BRACKET: &str = "vim.a_bracket";
+/// `i[`, `i]` in a visual mode: select inside the `[` `]` pair around the cursor (T-109).
+pub const SELECT_INNER_BRACKET: &str = "vim.select_inner_bracket";
+/// `a[`, `a]` in a visual mode: select all of the `[` `]` pair around the cursor (T-109).
+pub const SELECT_A_BRACKET: &str = "vim.select_a_bracket";
+/// `i{`, `i}`, `iB` under an operator: inside the `{` `}` pair around the cursor (T-109).
+pub const INNER_BRACE: &str = "vim.inner_brace";
+/// `a{`, `a}`, `aB` under an operator: all of the `{` `}` pair around the cursor (T-109).
+pub const A_BRACE: &str = "vim.a_brace";
+/// `i{`, `i}`, `iB` in a visual mode: select inside the `{` `}` pair around the cursor (T-109).
+pub const SELECT_INNER_BRACE: &str = "vim.select_inner_brace";
+/// `a{`, `a}`, `aB` in a visual mode: select all of the `{` `}` pair around the cursor (T-109).
+pub const SELECT_A_BRACE: &str = "vim.select_a_brace";
+/// `i<`, `i>` under an operator: inside the `<` `>` pair around the cursor (T-109).
+pub const INNER_ANGLE: &str = "vim.inner_angle";
+/// `a<`, `a>` under an operator: all of the `<` `>` pair around the cursor (T-109).
+pub const A_ANGLE: &str = "vim.a_angle";
+/// `i<`, `i>` in a visual mode: select inside the `<` `>` pair around the cursor (T-109).
+pub const SELECT_INNER_ANGLE: &str = "vim.select_inner_angle";
+/// `a<`, `a>` in a visual mode: select all of the `<` `>` pair around the cursor (T-109).
+pub const SELECT_A_ANGLE: &str = "vim.select_a_angle";
+/// `i"` under an operator: inside the `"` quotes around or after the cursor on its line (T-109).
+pub const INNER_DOUBLE_QUOTE: &str = "vim.inner_double_quote";
+/// `a"` under an operator: all of the `"` quotes around or after the cursor on its line (T-109).
+pub const A_DOUBLE_QUOTE: &str = "vim.a_double_quote";
+/// `i"` in a visual mode: select inside the `"` quotes around or after the cursor on its line (T-109).
+pub const SELECT_INNER_DOUBLE_QUOTE: &str = "vim.select_inner_double_quote";
+/// `a"` in a visual mode: select all of the `"` quotes around or after the cursor on its line (T-109).
+pub const SELECT_A_DOUBLE_QUOTE: &str = "vim.select_a_double_quote";
+/// `i'` under an operator: inside the `'` quotes around or after the cursor on its line (T-109).
+pub const INNER_SINGLE_QUOTE: &str = "vim.inner_single_quote";
+/// `a'` under an operator: all of the `'` quotes around or after the cursor on its line (T-109).
+pub const A_SINGLE_QUOTE: &str = "vim.a_single_quote";
+/// `i'` in a visual mode: select inside the `'` quotes around or after the cursor on its line (T-109).
+pub const SELECT_INNER_SINGLE_QUOTE: &str = "vim.select_inner_single_quote";
+/// `a'` in a visual mode: select all of the `'` quotes around or after the cursor on its line (T-109).
+pub const SELECT_A_SINGLE_QUOTE: &str = "vim.select_a_single_quote";
+/// `` i` `` under an operator: inside the `` ` `` quotes around or after the cursor on its line (T-109).
+pub const INNER_BACKTICK: &str = "vim.inner_backtick";
+/// `` a` `` under an operator: all of the `` ` `` quotes around or after the cursor on its line (T-109).
+pub const A_BACKTICK: &str = "vim.a_backtick";
+/// `` i` `` in a visual mode: select inside the `` ` `` quotes around or after the cursor on its line (T-109).
+pub const SELECT_INNER_BACKTICK: &str = "vim.select_inner_backtick";
+/// `` a` `` in a visual mode: select all of the `` ` `` quotes around or after the cursor on its line (T-109).
+pub const SELECT_A_BACKTICK: &str = "vim.select_a_backtick";
+/// `ip` under an operator: inside the paragraph, or the run of blank lines, under the cursor (T-109).
+pub const INNER_PARAGRAPH: &str = "vim.inner_paragraph";
+/// `ap` under an operator: all of the paragraph, or the run of blank lines, under the cursor (T-109).
+pub const A_PARAGRAPH: &str = "vim.a_paragraph";
+/// `ip` in a visual mode: select inside the paragraph, or the run of blank lines, under the cursor (T-109).
+pub const SELECT_INNER_PARAGRAPH: &str = "vim.select_inner_paragraph";
+/// `ap` in a visual mode: select all of the paragraph, or the run of blank lines, under the cursor (T-109).
+pub const SELECT_A_PARAGRAPH: &str = "vim.select_a_paragraph";
+
 /// Every id above, sorted.
 pub const ALL: [&str; 55] = [
     APPEND,

@@ -5,11 +5,12 @@ use helm_text::BufferSet;
 
 use crate::{
     Action, Binding, CommandArgs, CommandError, CommandId, CommandRegistry, Editor, Invocation,
-    Key, KeyEvent, Keymap, Keystroke, ModeId, Modifiers, Typing,
+    Key, KeyEvent, Keymap, Keystroke, ModeId, Modifiers, Request, Session, Typing,
 };
 
 /// One editor's input state: its mode, the keys of a chord typed so far,
-/// a pending operator, and a pending count (T-108).
+/// a pending operator, a pending count (T-108), a pending register and the
+/// command line (T-109).
 ///
 /// Each editor has its own, so a chord half typed in one pane doesn't carry
 /// over to another. A state belongs to the [`Dispatcher`] that made it with
@@ -25,6 +26,12 @@ pub struct KeyState {
     operator: Option<(CommandId, ModeId, Option<usize>)>,
     /// The count typed so far, in a counting mode.
     count: Option<usize>,
+    /// The register name typed so far (T-109). A placeholder: the
+    /// implementation may reshape it.
+    register: Option<char>,
+    /// The command line typed so far in a [`Typing::Line`] mode, and the
+    /// mode it was entered from (T-109).
+    line: Option<(String, ModeId)>,
     /// The dispatcher's keymap generation this state last synced to.
     generation: u64,
 }
@@ -55,8 +62,25 @@ impl KeyState {
         self.count
     }
 
-    /// Drops the pending chord, the pending operator and the pending count
-    /// (T-108), including a count held with the operator, and returns to
+    /// The register name held for the next command (T-109), or `None` if
+    /// none is pending. A name typed before an operator stays here until
+    /// the operator runs. `helm-ui` shows it in the status bar while it
+    /// waits for the next key.
+    pub fn register(&self) -> Option<char> {
+        todo!()
+    }
+
+    /// The command line typed so far (T-109), or `None` when the mode's
+    /// typing isn't [`Typing::Line`]. `helm-ui` draws it after a `:`.
+    /// [`cancel`](Self::cancel) and a keymap switch drop it and go back to
+    /// the mode it was entered from, as for a pending operator.
+    pub fn line(&self) -> Option<&str> {
+        todo!()
+    }
+
+    /// Drops the pending chord, the pending operator, the pending count
+    /// (T-108) and the pending register (T-109), including a count or a
+    /// register held with the operator, and returns to
     /// the mode the operator was set in, if one was held. Returns whether
     /// anything was pending. `helm-ui` calls this when the editor loses
     /// focus or the user clicks in it.
@@ -159,6 +183,8 @@ impl Dispatcher {
             pending: Vec::new(),
             operator: None,
             count: None,
+            register: None,
+            line: None,
             generation: self.generation,
         }
     }
@@ -216,13 +242,18 @@ impl Dispatcher {
     ///    - `Action::Operator` with an operator pending: the pending one is
     ///      cancelled as in rule 3: `Cancelled`. The binding's `then_mode`
     ///      doesn't apply.
-    ///    - No action: a pending operator and a pending count are
-    ///      cancelled, without returning `Cancelled`: `Done`.
+    ///    - [`Action::Register`](crate::Action::Register) with no operator
+    ///      pending (T-109): the name becomes the pending register,
+    ///      replacing any pending one, and a pending count stays: `Pending`.
+    ///      With an operator pending, the operator is cancelled as in rule
+    ///      3: `Cancelled`.
+    ///    - No action: a pending operator, a pending count and a pending
+    ///      register are cancelled, without returning `Cancelled`: `Done`.
     ///
     ///    Then, except where noted, the binding's `then_mode`, if any,
     ///    becomes the mode, after any return to the operator's mode.
-    /// 3. **Broken chord, operator or count.** If a chord, an operator or
-    ///    a count is pending, all of them clear, the mode goes back to the
+    /// 3. **Broken chord, operator, count or register.** If a chord, an
+    ///    operator, a count or a register is pending, all of them clear, the mode goes back to the
     ///    one the operator was set in, if one was held, and the key is
     ///    dropped: `Cancelled`. So Escape cancels anything pending unless a
     ///    binding says otherwise.
@@ -230,7 +261,13 @@ impl Dispatcher {
     ///    the event has non-empty [`text`](KeyEvent::text), and neither
     ///    Ctrl nor Cmd is held: `Run` of [`Invocation::insert`] with the
     ///    text. Typing takes the same path as a bound command.
-    /// 5. Otherwise `Unbound`.
+    /// 5. **The command line (T-109).** If `M`'s typing is
+    ///    [`Line`](crate::Typing::Line): an event with non-empty text and
+    ///    neither Ctrl nor Cmd held adds the text to the end of the line:
+    ///    `Pending`. Backspace with no modifiers removes the line's last
+    ///    char: `Pending`. On an empty line it clears the line and goes back
+    ///    to the mode the line was entered from: `Done`.
+    /// 6. Otherwise `Unbound`.
     ///
     /// Mode changes happen here, before the caller runs the returned
     /// command, and stand even if the command then fails.
@@ -245,6 +282,28 @@ impl Dispatcher {
     /// Vim's keymap `2 d 3 w` gives 6, `d 3 w` gives 3 and `d w` gives
     /// `None`. A count survives a chord: `1 2 g g` gives 12. `helm-ui` reads
     /// it from the invocation for the ids it runs itself.
+    ///
+    /// # Registers (T-109)
+    ///
+    /// A `Run` carries the pending register as its register argument and
+    /// clears it. A register typed before an operator moves onto it, so
+    /// `" a d w` gives `vim.delete` with register `a`, and a count can come
+    /// before or after the register: `2 " a y y` and `" a 2 y y` give the
+    /// same `Run`. Where the register argument lives is open question 1 of
+    /// `tasks/109-vim-objects.md`: a `CommandArgs` field needs Khakha's
+    /// grant to edit `tests/commands.rs`.
+    ///
+    /// # The command line (T-109)
+    ///
+    /// When a binding's `then_mode` switches from a mode whose typing isn't
+    /// [`Line`](crate::Typing::Line) into one whose typing is, the line
+    /// starts empty and remembers the mode it came from. A `Run` that
+    /// resolves while the mode's typing is `Line` carries the line as its
+    /// [`CommandArgs::text`](crate::CommandArgs::text). The line clears
+    /// whenever the mode becomes one whose typing isn't `Line`, by a
+    /// binding or by rule 5. [`KeyState::cancel`] and a keymap switch drop
+    /// it and go back to the mode it was entered from, as they do for a
+    /// pending operator, since a key state can't see the keymap's modes.
     pub fn resolve(&self, state: &mut KeyState, event: &KeyEvent, contexts: &[&str]) -> Resolution {
         self.sync(state);
         let keystroke = event.keystroke;
@@ -327,6 +386,7 @@ impl Dispatcher {
                     state.cancel();
                     return Resolution::Cancelled;
                 }
+                Some(Action::Register(_)) => todo!("T-109: a pending register"),
                 Some(Action::Operator(command)) => {
                     let count = state.count.take();
                     state.operator = Some((command.clone(), state.mode.clone(), count));
@@ -369,6 +429,10 @@ impl Dispatcher {
     /// invocation on `editor` and `set` with [`CommandRegistry::run`], so
     /// the command gets the invocation's count (T-108). Returns the
     /// resolution, or the command's error.
+    ///
+    /// The command runs with a fresh [`Session`], so registers, `.` and
+    /// the requests a command makes don't outlive the call (T-109).
+    /// `helm-ui` uses [`dispatch_in`](Self::dispatch_in).
     pub fn dispatch(
         &self,
         state: &mut KeyState,
@@ -382,6 +446,32 @@ impl Dispatcher {
             self.registry.run(invocation, editor, set)?;
         }
         Ok(resolution)
+    }
+
+    /// [`resolve`](Self::resolve), then, for [`Resolution::Run`], runs the
+    /// invocation on `editor` and `set` with
+    /// [`CommandRegistry::run_in`] and `session` (T-109). Returns the
+    /// resolution and the [`Request`]s the command made, in order, for
+    /// `helm-ui` to carry out. On the command's error it returns the error
+    /// and no request.
+    ///
+    /// This is the dispatch `helm-ui` uses. [`dispatch`](Self::dispatch) is
+    /// this with a fresh [`Session`] that is dropped afterwards, along with
+    /// the requests.
+    #[expect(
+        unused_variables,
+        reason = "T-109 interface stub; the implementation deletes this"
+    )]
+    pub fn dispatch_in(
+        &self,
+        state: &mut KeyState,
+        event: &KeyEvent,
+        contexts: &[&str],
+        editor: &mut Editor,
+        set: &mut BufferSet,
+        session: &mut Session,
+    ) -> Result<(Resolution, Vec<Request>), CommandError> {
+        todo!()
     }
 }
 

@@ -83,6 +83,15 @@
 //! how Vim's insert mode undoes. The [`vim`] module docs hold Vim's rules,
 //! and [`CommandRegistry::with_vim_commands`] holds every command both
 //! keymaps bind.
+//!
+//! # Registers, `.` and requests (T-109)
+//!
+//! A [`Session`] holds what every editor shares: Vim's registers and the
+//! last change `.` repeats. [`Dispatcher::dispatch_in`] and
+//! [`CommandRegistry::run_in`] take it, and return the [`Request`]s a
+//! command made for `helm-ui` to carry out, such as saving a file or
+//! putting text on the clipboard. `helm-editor` never touches a file, a
+//! window or the clipboard itself.
 
 mod command;
 pub mod cursor_commands;
@@ -94,6 +103,7 @@ mod key;
 mod keymap;
 mod motion;
 mod selection;
+mod session;
 pub mod vim;
 pub mod vim_commands;
 pub mod vscode;
@@ -109,3 +119,4 @@ pub use key::{Key, KeyEvent, KeyParseError, KeySequence, Keystroke, Modifiers};
 pub use keymap::{Action, Binding, Keymap, KeymapError, Mode, ModeId, Typing};
 pub use motion::Motion;
 pub use selection::{Selection, Selections};
+pub use session::{Register, Request, Session};
