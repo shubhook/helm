@@ -198,13 +198,13 @@ impl Dispatcher {
     ///    over one without, then the one added later. The pending chord
     ///    clears, and the winner acts:
     ///    - [`Action::Run`](crate::Action::Run) with no operator pending:
-    ///      `Run` of the command. The pending count goes with it, as
-    ///      [`resolve_counted`](Self::resolve_counted) says, and clears.
+    ///      `Run` of the command. The pending count goes with it as its
+    ///      [`count`](crate::CommandArgs::count), and clears.
     ///    - `Action::Run` with an operator pending: `Run` of the operator,
     ///      with the binding's command as its
-    ///      [`motion`](crate::CommandArgs::motion). The operator and the
-    ///      counts clear and the mode goes back to the one the operator was
-    ///      set in.
+    ///      [`motion`](crate::CommandArgs::motion) and the counts as its
+    ///      `count` (see "Counts" below). The operator and the counts clear
+    ///      and the mode goes back to the one the operator was set in.
     ///    - [`Action::Operator`](crate::Action::Operator) with no operator
     ///      pending: the command becomes the pending operator, set in mode
     ///      `M`, and the pending count moves onto it: `Pending`.
@@ -230,8 +230,16 @@ impl Dispatcher {
     /// Mode changes happen here, before the caller runs the returned
     /// command, and stand even if the command then fails.
     ///
-    /// This is [`resolve_counted`](Self::resolve_counted) without the
-    /// count.
+    /// # Counts (T-108)
+    ///
+    /// Only a `Run` carries a count, in its invocation's
+    /// [`CommandArgs::count`](crate::CommandArgs::count). It is `None` when
+    /// no digits were typed before it. For a `Run` of a pending operator it
+    /// is the count typed before the operator times the count typed after
+    /// it, or whichever one was typed, saturating at `usize::MAX`. So in
+    /// Vim's keymap `2 d 3 w` gives 6, `d 3 w` gives 3 and `d w` gives
+    /// `None`. A count survives a chord: `1 2 g g` gives 12. `helm-ui` reads
+    /// it from the invocation for the ids it runs itself.
     pub fn resolve(&self, state: &mut KeyState, event: &KeyEvent, contexts: &[&str]) -> Resolution {
         self.sync(state);
         let keystroke = event.keystroke;
@@ -277,6 +285,7 @@ impl Dispatcher {
                             args: CommandArgs {
                                 text: None,
                                 motion: Some(command.clone()),
+                                count: None,
                             },
                         })
                     }
@@ -319,39 +328,10 @@ impl Dispatcher {
         }
     }
 
-    /// [`resolve`](Self::resolve), and the count that goes with a
-    /// [`Resolution::Run`] (T-108). The resolution and the change to
-    /// `state` are exactly what `resolve` gives for the same state and
-    /// event.
-    ///
-    /// The count is `None` for every resolution but `Run`, and for a `Run`
-    /// with no digits typed before it. For a `Run` of a pending operator it
-    /// is the count typed before the operator times the count typed after
-    /// it, or whichever one was typed, saturating at `usize::MAX`. So in
-    /// Vim's keymap `2 d 3 w` gives 6, `d 3 w` gives 3 and `d w` gives
-    /// `None`. A count survives a chord: `1 2 g g` gives 12.
-    ///
-    /// `helm-ui` uses this for the ids it runs itself, and passes the count
-    /// to [`CommandRegistry::run_counted`] for the rest, as
-    /// [`dispatch`](Self::dispatch) does.
-    #[expect(
-        unused_variables,
-        reason = "T-108 interface stub; the implementation deletes this"
-    )]
-    pub fn resolve_counted(
-        &self,
-        state: &mut KeyState,
-        event: &KeyEvent,
-        contexts: &[&str],
-    ) -> (Resolution, Option<usize>) {
-        todo!()
-    }
-
     /// [`resolve`](Self::resolve), then, for [`Resolution::Run`], runs the
-    /// invocation on `editor` and `set` with
-    /// [`CommandRegistry::run_counted`], passing the count
-    /// [`resolve_counted`](Self::resolve_counted) gives (T-108). Returns
-    /// the resolution, or the command's error.
+    /// invocation on `editor` and `set` with [`CommandRegistry::run`], so
+    /// the command gets the invocation's count (T-108). Returns the
+    /// resolution, or the command's error.
     pub fn dispatch(
         &self,
         state: &mut KeyState,

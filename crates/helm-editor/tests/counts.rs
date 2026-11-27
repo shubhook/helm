@@ -1,7 +1,7 @@
 //! T-108 acceptance tests: counts. Digits typed in a `Typing::Count` mode
-//! make a count in the `KeyState`, `Dispatcher::resolve_counted` hands it
-//! out with the command it goes with, and `CommandRegistry::run_counted`
-//! passes it to the command as `CommandContext::count`.
+//! make a count in the `KeyState`, `Dispatcher::resolve` puts it in the
+//! `CommandArgs::count` of the command it goes with, and
+//! `CommandRegistry::run` passes it to the command in its arguments.
 
 use helm_editor::{
     Binding, Command, CommandContext, CommandError, CommandId, CommandRegistry, Dispatcher, Editor,
@@ -87,6 +87,36 @@ fn dispatcher() -> (Dispatcher, KeyState) {
     (dispatcher, state)
 }
 
+/// `Dispatcher::resolve`, with the count a `Run` carries in its arguments
+/// taken out and returned beside the resolution.
+fn resolve_counted(
+    d: &Dispatcher,
+    state: &mut KeyState,
+    event: &KeyEvent,
+    contexts: &[&str],
+) -> (Resolution, Option<usize>) {
+    match d.resolve(state, event, contexts) {
+        Resolution::Run(mut invocation) => {
+            let count = invocation.args.count.take();
+            (Resolution::Run(invocation), count)
+        }
+        other => (other, None),
+    }
+}
+
+/// `CommandRegistry::run` of `invocation` with `count` in its arguments.
+fn run_counted(
+    registry: &CommandRegistry,
+    invocation: &Invocation,
+    count: Option<usize>,
+    editor: &mut Editor,
+    set: &mut BufferSet,
+) -> Result<(), CommandError> {
+    let mut invocation = invocation.clone();
+    invocation.args.count = count;
+    registry.run(&invocation, editor, set)
+}
+
 /// Resolves each keystroke of `keys` with `resolve_counted`, and returns
 /// every result.
 fn press(d: &Dispatcher, state: &mut KeyState, keys: &str) -> Vec<(Resolution, Option<usize>)> {
@@ -94,7 +124,7 @@ fn press(d: &Dispatcher, state: &mut KeyState, keys: &str) -> Vec<(Resolution, O
         .expect("valid keys")
         .as_slice()
         .iter()
-        .map(|&k| d.resolve_counted(state, &KeyEvent::new(k), &[]))
+        .map(|&k| resolve_counted(d, state, &KeyEvent::new(k), &[]))
         .collect()
 }
 
@@ -105,7 +135,7 @@ fn last(d: &Dispatcher, state: &mut KeyState, keys: &str) -> (Resolution, Option
 
 /// `t.count` types the count it was given, or `none`.
 fn type_count(cx: CommandContext<'_>) -> Result<(), CommandError> {
-    let text = cx.count.map_or("none".to_owned(), |n| n.to_string());
+    let text = cx.args.count.map_or("none".to_owned(), |n| n.to_string());
     cx.editor.insert(cx.set, &format!("{text};"))?;
     Ok(())
 }
@@ -177,7 +207,7 @@ fn resolve_gives_the_same_resolution_and_state() {
         let mut plain = d.key_state();
         for &k in KeySequence::parse(keys).unwrap().as_slice() {
             let event = KeyEvent::new(k);
-            let (a, _) = d.resolve_counted(&mut counted, &event, &[]);
+            let a = d.resolve(&mut counted, &event, &[]);
             let b = d.resolve(&mut plain, &event, &[]);
             assert_eq!(a, b, "{keys}");
             assert_eq!(counted, plain, "{keys}");
@@ -214,7 +244,7 @@ fn only_counting_modes_count() {
     // Insert mode types digits.
     press(&d, &mut state, "i");
     assert_eq!(state.mode().as_str(), "insert");
-    let (resolution, count) = d.resolve_counted(&mut state, &event("3"), &[]);
+    let (resolution, count) = resolve_counted(&d, &mut state, &event("3"), &[]);
     assert_eq!(resolution, Resolution::Run(Invocation::insert("3")));
     assert_eq!((count, state.count()), (None, None));
     // An ignoring mode runs its binding on `1` and drops other digits.
@@ -434,16 +464,13 @@ fn run_counted_passes_the_count_and_run_passes_none() {
     let registry = registry();
     let (mut set, mut editor) = setup("");
     let invocation = Invocation::new("t.count");
-    registry
-        .run_counted(&invocation, Some(7), &mut editor, &mut set)
-        .unwrap();
+    run_counted(&registry, &invocation, Some(7), &mut editor, &mut set).unwrap();
     registry.run(&invocation, &mut editor, &mut set).unwrap();
-    registry
-        .run_counted(&invocation, None, &mut editor, &mut set)
-        .unwrap();
+    run_counted(&registry, &invocation, None, &mut editor, &mut set).unwrap();
     assert_eq!(text(&set, &editor), "7;none;none;");
     assert_eq!(
-        registry.run_counted(
+        run_counted(
+            &registry,
             &Invocation::new("t.missing"),
             Some(2),
             &mut editor,

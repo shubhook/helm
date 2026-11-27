@@ -4,13 +4,13 @@
 //! module docs hold the rules each one follows.
 //!
 //! Every command runs at every selection of the editor and takes the
-//! [`CommandContext::count`] it is given, where its rule says it uses one.
+//! [`CommandArgs::count`] it is given, where its rule says it uses one.
 //! The motion commands are also the motions the two operators take as
 //! [`CommandArgs::motion`]. An operator given a motion id that isn't one of
 //! the sixteen motions here, or none, does nothing and returns `Ok`.
 //!
 //! [`CommandRegistry::with_vim_commands`]: crate::CommandRegistry::with_vim_commands
-//! [`CommandContext::count`]: crate::CommandContext::count
+//! [`CommandArgs::count`]: crate::CommandArgs::count
 //! [`CommandArgs::motion`]: crate::CommandArgs::motion
 
 #![expect(

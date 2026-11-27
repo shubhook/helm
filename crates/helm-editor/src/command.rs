@@ -49,8 +49,9 @@ impl fmt::Display for CommandId {
     }
 }
 
-/// What a command gets besides the editor: the text to type, or the motion
-/// a pending operator runs over. A command ignores what it doesn't use.
+/// What a command gets besides the editor: the text to type, the motion a
+/// pending operator runs over, and the count typed before it. A command
+/// ignores what it doesn't use.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CommandArgs {
     /// The text [`editor_commands::INSERT`](crate::editor_commands::INSERT)
@@ -63,6 +64,12 @@ pub struct CommandArgs {
     /// operators (T-108) take the motion ids in
     /// [`vim_commands`](crate::vim_commands).
     pub motion: Option<CommandId>,
+    /// The count typed before the command (T-108), or `None` if none was.
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) says where it
+    /// comes from: in Vim's keymap `3 w` gives 3, and `2 d 3 w` gives the
+    /// operator 6. A command that takes no count ignores it. One that does
+    /// reads `None` as its default, usually 1.
+    pub count: Option<usize>,
 }
 
 /// One command to run, with its arguments.
@@ -94,6 +101,7 @@ impl Invocation {
             args: CommandArgs {
                 text: Some(text.into()),
                 motion: None,
+                count: None,
             },
         }
     }
@@ -105,15 +113,8 @@ pub struct CommandContext<'a> {
     pub editor: &'a mut Editor,
     /// The set that owns the editor's buffer.
     pub set: &'a mut BufferSet,
-    /// The invocation's arguments.
+    /// The invocation's arguments, its count included.
     pub args: &'a CommandArgs,
-    /// The count typed before the command (T-108), or `None` if none was.
-    /// [`Dispatcher::resolve_counted`](crate::Dispatcher::resolve_counted)
-    /// says where it comes from, and
-    /// [`CommandRegistry::run_counted`] passes it in. A command that takes
-    /// no count ignores it. One that does reads `None` as its default,
-    /// usually 1.
-    pub count: Option<usize>,
 }
 
 /// The function a command runs. Plain function pointers keep commands
@@ -217,8 +218,8 @@ impl CommandRegistry {
     /// registered, and passes on the command's own error. Every editor
     /// command changes nothing when it errors, as [`EditorError`] says.
     ///
-    /// The command's [`CommandContext::count`] is `None`. This is
-    /// [`run_counted`](Self::run_counted) with no count.
+    /// The command gets the invocation's arguments, so a count typed before
+    /// it arrives as [`CommandArgs::count`].
     pub fn run(
         &self,
         invocation: &Invocation,
@@ -234,30 +235,7 @@ impl CommandRegistry {
             editor,
             set,
             args: &invocation.args,
-            count: None,
         })
-    }
-
-    /// Runs `invocation`'s command on `editor` and `set` with `count` as
-    /// its [`CommandContext::count`] (T-108). Errors as
-    /// [`run`](Self::run) does.
-    ///
-    /// [`Dispatcher::dispatch`](crate::Dispatcher::dispatch) runs every
-    /// command through this, with the count
-    /// [`Dispatcher::resolve_counted`](crate::Dispatcher::resolve_counted)
-    /// gave.
-    #[expect(
-        unused_variables,
-        reason = "T-108 interface stub; the implementation deletes this"
-    )]
-    pub fn run_counted(
-        &self,
-        invocation: &Invocation,
-        count: Option<usize>,
-        editor: &mut Editor,
-        set: &mut BufferSet,
-    ) -> Result<(), CommandError> {
-        todo!()
     }
 }
 

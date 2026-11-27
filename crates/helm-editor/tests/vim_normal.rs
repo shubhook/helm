@@ -716,9 +716,9 @@ fn vim_line_on_its_own_and_operators_without_a_vim_motion() {
     let mut v = Vim::new("|a\n  b\n  c\nd");
     let registry = CommandRegistry::with_vim_commands();
     let line = Invocation::new(vim_commands::LINE);
-    registry
-        .run_counted(&line, Some(3), &mut v.editor, &mut v.set)
-        .unwrap();
+    let mut counted = line.clone();
+    counted.args.count = Some(3);
+    registry.run(&counted, &mut v.editor, &mut v.set).unwrap();
     assert_eq!(v.show(), "a\n  b\n  |c\nd");
     registry.run(&line, &mut v.editor, &mut v.set).unwrap();
     assert_eq!(v.show(), "a\n  b\n  |c\nd");
@@ -726,8 +726,9 @@ fn vim_line_on_its_own_and_operators_without_a_vim_motion() {
         for motion in [None, Some("cursor.left"), Some("vim.select_left")] {
             let mut invocation = Invocation::new(operator);
             invocation.args.motion = motion.map(CommandId::from);
+            invocation.args.count = Some(2);
             registry
-                .run_counted(&invocation, Some(2), &mut v.editor, &mut v.set)
+                .run(&invocation, &mut v.editor, &mut v.set)
                 .unwrap();
             assert_eq!(v.show(), "a\n  b\n  |c\nd", "{operator} {motion:?}");
             assert!(!v.editor.in_undo_group(), "{operator} {motion:?}");
