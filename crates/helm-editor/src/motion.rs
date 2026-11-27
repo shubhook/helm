@@ -11,6 +11,8 @@ use helm_text::{Buffer, TextBuffer};
 
 use crate::editor::is_word;
 
+pub(crate) mod vim;
+
 /// Where a cursor moves from its head.
 ///
 /// Every motion lands on a char boundary of the buffer's text, never
@@ -361,8 +363,10 @@ impl<'a> Forward<'a> {
         while !chunk.is_char_boundary(j) {
             j -= 1;
         }
-        let text = chunk[i..j].to_owned();
-        self.window = Window { start, text };
+        // Reuse the window's allocation: a command reads many windows.
+        self.window.text.clear();
+        self.window.text.push_str(&chunk[i..j]);
+        self.window.start = start;
         self.size = self.size.saturating_mul(2);
         true
     }
@@ -546,14 +550,16 @@ impl<'a> Backward<'a> {
             i -= 1;
         }
         let start = chunk_start + i;
-        let text = chunk[i..j].to_owned();
+        let text = &chunk[i..j];
         if self.join && self.window.start == end && !self.window.text.is_empty() {
             // Join onto what the reader read before.
-            self.window.text.insert_str(0, &text);
-            self.window.start = start;
+            self.window.text.insert_str(0, text);
         } else {
-            self.window = Window { start, text };
+            // Reuse the window's allocation: a command reads many windows.
+            self.window.text.clear();
+            self.window.text.push_str(text);
         }
+        self.window.start = start;
         self.size = self.size.saturating_mul(2);
         true
     }

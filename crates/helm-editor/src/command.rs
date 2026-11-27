@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use helm_text::BufferSet;
 
-use crate::{Editor, EditorError, cursor_commands, editor_commands};
+use crate::{Editor, EditorError, cursor_commands, editor_commands, vim_commands};
 
 /// A command's id, such as `"editor.delete_backward"`. Keymaps, the
 /// keybindings file and the command palette name commands by id, so an id
@@ -49,8 +49,9 @@ impl fmt::Display for CommandId {
     }
 }
 
-/// What a command gets besides the editor: the text to type, or the motion
-/// a pending operator runs over. A command ignores what it doesn't use.
+/// What a command gets besides the editor: the text to type, the motion a
+/// pending operator runs over, and the count typed before it. A command
+/// ignores what it doesn't use.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CommandArgs {
     /// The text [`editor_commands::INSERT`](crate::editor_commands::INSERT)
@@ -59,8 +60,16 @@ pub struct CommandArgs {
     pub text: Option<String>,
     /// For an operator, the motion it applies to: the command a key bound
     /// after the operator named (see [`Action::Operator`](crate::Action)).
-    /// What an operator does with it is up to the operator (T-108).
+    /// What an operator does with it is up to the operator. Vim's
+    /// operators (T-108) take the motion ids in
+    /// [`vim_commands`](crate::vim_commands).
     pub motion: Option<CommandId>,
+    /// The count typed before the command (T-108), or `None` if none was.
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) says where it
+    /// comes from: in Vim's keymap `3 w` gives 3, and `2 d 3 w` gives the
+    /// operator 6. A command that takes no count ignores it. One that does
+    /// reads `None` as its default, usually 1.
+    pub count: Option<usize>,
 }
 
 /// One command to run, with its arguments.
@@ -92,6 +101,7 @@ impl Invocation {
             args: CommandArgs {
                 text: Some(text.into()),
                 motion: None,
+                count: None,
             },
         }
     }
@@ -103,7 +113,7 @@ pub struct CommandContext<'a> {
     pub editor: &'a mut Editor,
     /// The set that owns the editor's buffer.
     pub set: &'a mut BufferSet,
-    /// The invocation's arguments.
+    /// The invocation's arguments, its count included.
     pub args: &'a CommandArgs,
 }
 
@@ -157,11 +167,25 @@ impl CommandRegistry {
     /// [`with_editor_commands`](Self::with_editor_commands) and the cursor
     /// commands under the ids in
     /// [`cursor_commands`](crate::cursor_commands): every command the
-    /// [`vscode`](crate::vscode) keymap binds. This is the registry
-    /// `helm-ui` builds its dispatcher with.
+    /// [`vscode`](crate::vscode) keymap binds. `helm-ui` builds its
+    /// dispatcher with [`with_vim_commands`](Self::with_vim_commands),
+    /// which holds these and Vim's.
     pub fn with_all_commands() -> Self {
         let mut registry = Self::with_editor_commands();
         cursor_commands::register_all(&mut registry);
+        registry
+    }
+
+    /// A registry holding the commands of
+    /// [`with_all_commands`](Self::with_all_commands) and the Vim commands
+    /// under the ids in [`vim_commands`](crate::vim_commands) (T-108):
+    /// every command the [`vscode`](crate::vscode) and [`vim`](crate::vim)
+    /// keymaps bind, 91 in all. One dispatcher built with it can switch
+    /// between the two keymaps at runtime (ED-6). This is the registry
+    /// `helm-ui` builds its dispatcher with.
+    pub fn with_vim_commands() -> Self {
+        let mut registry = Self::with_all_commands();
+        vim_commands::register_all(&mut registry);
         registry
     }
 
@@ -195,6 +219,9 @@ impl CommandRegistry {
     /// Errors with [`CommandError::UnknownCommand`] if the id isn't
     /// registered, and passes on the command's own error. Every editor
     /// command changes nothing when it errors, as [`EditorError`] says.
+    ///
+    /// The command gets the invocation's arguments, so a count typed before
+    /// it arrives as [`CommandArgs::count`].
     pub fn run(
         &self,
         invocation: &Invocation,

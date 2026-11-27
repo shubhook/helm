@@ -266,6 +266,7 @@ fn run_passes_the_invocation_args() {
         args: CommandArgs {
             text: None,
             motion: Some(CommandId::from("vim.word")),
+            count: None,
         },
     };
     registry.run(&invocation, &mut editor, &mut set).unwrap();
@@ -288,6 +289,7 @@ fn invocation_constructors() {
             args: CommandArgs {
                 text: Some("hé".to_owned()),
                 motion: None,
+                count: None,
             },
         }
     );

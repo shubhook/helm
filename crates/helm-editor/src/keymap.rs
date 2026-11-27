@@ -46,8 +46,21 @@ pub enum Typing {
     /// any and Ctrl and Cmd aren't held. VS Code's only mode, and Vim's
     /// insert mode.
     Insert,
-    /// It does nothing. Vim's normal and visual modes.
+    /// It does nothing.
     Ignore,
+    /// It does nothing, and digits make a count (T-108). Vim's normal,
+    /// visual and operator-pending modes.
+    ///
+    /// With no chord pending, a [`Key::Char`](crate::Key::Char) digit with
+    /// no modifiers adds a digit to the state's count before any binding
+    /// is looked at: `1` to `9` always, and `0` only when a count is
+    /// already pending. So in a counting mode a binding on `1` to `9`
+    /// never matches, and a binding on `0` matches only when no count is
+    /// pending, which is Vim's `0` motion.
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) has the full
+    /// rule, and [`KeyState::count`](crate::KeyState::count) shows the
+    /// count.
+    Count,
 }
 
 /// One mode of a keymap. A mode is data: its id and what typing does in
@@ -178,6 +191,9 @@ pub struct Keymap {
     name: String,
     /// Never empty. The first is the initial mode.
     modes: Vec<Mode>,
+    /// Whether any mode's typing is [`Typing::Count`], so the dispatcher's
+    /// count rule can skip its mode lookup for keymaps without one.
+    counts: bool,
     /// In the order they were added.
     bindings: Vec<Binding>,
     /// The index into `bindings` of every binding whose keys start with
@@ -203,8 +219,10 @@ impl Keymap {
                 });
             }
         }
+        let counts = modes.iter().any(|mode| mode.typing == Typing::Count);
         Ok(Self {
             name: name.into(),
+            counts,
             modes,
             bindings: Vec::new(),
             by_first_key: HashMap::new(),
@@ -249,6 +267,11 @@ impl Keymap {
             .push(self.bindings.len());
         self.bindings.push(binding);
         Ok(())
+    }
+
+    /// Whether any mode's typing is [`Typing::Count`].
+    pub(crate) fn counts(&self) -> bool {
+        self.counts
     }
 
     /// The bindings, in the order they were added.

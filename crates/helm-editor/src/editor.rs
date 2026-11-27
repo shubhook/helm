@@ -11,6 +11,10 @@ use helm_text::{
 use crate::motion::{Reads, target, try_target};
 use crate::{EditorError, Motion, Selection, Selections};
 
+mod vim;
+
+pub(crate) use vim::{Entry, Operator};
+
 /// The selections on one buffer of a [`BufferSet`], and the commands that
 /// edit at every selection or add new ones.
 ///
@@ -95,6 +99,41 @@ use crate::{EditorError, Motion, Selection, Selections};
 /// [`set_selections`](Self::set_selections). If an Up or Down move merges
 /// selections, the merged one keeps the goal of one of them; which one is
 /// not specified.
+///
+/// # Undo groups (T-108)
+///
+/// An undo group makes a run of editing commands one undo step, such as
+/// everything typed between Vim's `i` and Escape.
+/// [`begin_undo_group`](Self::begin_undo_group) opens one and
+/// [`end_undo_group`](Self::end_undo_group) closes it. While a group is
+/// open:
+///
+/// - The first editing command that applies a transaction applies it as
+///   usual. Each later one folds its edits into that transaction with
+///   [`BufferSet::amend`](helm_text::BufferSet::amend) instead of applying
+///   a new one, and returns that transaction's id. A command with nothing
+///   to do applies and amends nothing, and returns `Ok(None)`, as before.
+/// - Undoing the group's transaction puts back the selections from just
+///   before the group's first edit. Redoing it puts back the selections
+///   from just after its last edit.
+/// - If `amend` refuses, because another transaction is now on top of the
+///   buffer's undo history (an agent's edit, say), the command applies a
+///   new transaction instead, and the group goes on from that one. The
+///   group then undoes in more than one step, and nothing is lost.
+/// - Moving or setting selections doesn't end the group. A successful
+///   [`undo`](Self::undo) or [`redo`](Self::redo) ends it, even one that
+///   finds nothing to undo or redo. One that errors (`Blocked` or
+///   `UnknownBuffer`) changes nothing, the group included, so the group
+///   stays open. Opening a group while one is open ends the first.
+///
+/// The editor decides nothing about when a group ends: its caller does.
+/// Vim's commands open one when insert mode starts and close it on Escape
+/// (see [`vim`](crate::vim)). A keymap switch can't reach the editor, so
+/// `helm-ui` must call `end_undo_group` on every open editor right after
+/// [`Dispatcher::set_keymap`](crate::Dispatcher::set_keymap), before any
+/// key reaches the new keymap. Otherwise typing in the new keymap folds
+/// into the group the old one opened. Grouping VS Code's typing by pauses
+/// and cursor moves is a later task.
 #[derive(Clone, Debug)]
 pub struct Editor {
     buffer: BufferId,
@@ -111,6 +150,9 @@ pub struct Editor {
     /// Each selection's goal column, in chars, by index into `selections`,
     /// or empty when there are none. Only Up and Down set and keep them.
     goals: Vec<usize>,
+    /// The open undo group, if any, and the transaction its edits fold
+    /// into once its first edit has applied one.
+    group: Option<Option<TransactionId>>,
 }
 
 /// The selections just before and just after one transaction.
@@ -142,6 +184,7 @@ impl Editor {
             history: HashMap::new(),
             undone: Vec::new(),
             goals: Vec::new(),
+            group: None,
         }
     }
 
@@ -339,9 +382,13 @@ impl Editor {
     ///
     /// Errors with [`EditorError::Blocked`] when `BufferSet::undo` is
     /// blocked, and then nothing changes.
+    ///
+    /// A successful call ends an open undo group (T-108), even when there
+    /// was nothing to undo. An error leaves the group open.
     pub fn undo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.undo(self.buffer)?;
         self.goals.clear();
+        self.group = None;
         if let Some(record) = id.and_then(|id| self.history.get(&id)) {
             self.selections = record.before.clone();
             self.undone.push(record.id);
@@ -354,10 +401,12 @@ impl Editor {
     /// is nothing to redo. If this editor applied that transaction, the
     /// selections go back to what they were just after it.
     ///
-    /// Errors the same way as [`undo`](Self::undo).
+    /// Errors, and ends an open undo group, the same way as
+    /// [`undo`](Self::undo).
     pub fn redo(&mut self, set: &mut BufferSet) -> Result<Option<TransactionId>, EditorError> {
         let id = set.redo(self.buffer)?;
         self.goals.clear();
+        self.group = None;
         if let Some(record) = id.and_then(|id| self.history.get(&id)) {
             self.selections = record.after.clone();
             self.undone.retain(|&undone| undone != record.id);
@@ -457,6 +506,24 @@ impl Editor {
         let old = std::mem::replace(&mut self.selections, Selections::single(collapsed));
         Ok(self.selections != old)
     }
+
+    /// Opens an undo group (T-108), as the type docs describe. If a group
+    /// is already open, it ends first and a new one starts, so the next
+    /// edit is a new undo step.
+    pub fn begin_undo_group(&mut self) {
+        self.group = Some(None);
+    }
+
+    /// Closes the open undo group (T-108). Returns whether one was open.
+    /// The next edit is a new undo step.
+    pub fn end_undo_group(&mut self) -> bool {
+        self.group.take().is_some()
+    }
+
+    /// Whether an undo group is open (T-108).
+    pub fn in_undo_group(&self) -> bool {
+        self.group.is_some()
+    }
 }
 
 impl Editor {
@@ -555,7 +622,9 @@ impl Editor {
     }
 
     /// Applies `transaction`, which this editor built from `before`, and
-    /// moves to `after`.
+    /// moves to `after`. In an open undo group whose first edit is done,
+    /// amends the group's transaction instead, and applies a new one only
+    /// if `amend` refuses.
     fn apply(
         &mut self,
         set: &mut BufferSet,
@@ -563,14 +632,30 @@ impl Editor {
         before: Selections,
         after: Selections,
     ) -> TransactionId {
-        let id = set
-            .apply(transaction)
-            .expect("edits come from clamped selections in normal form, so they are valid");
+        // Both `apply` and `amend` drop redo, so this editor's undone
+        // records go either way.
         for undone in self.undone.drain(..) {
             self.history.remove(&undone);
         }
         self.selections = after.clone();
+        if let Some(Some(id)) = self.group
+            && set.amend(id, transaction.clone()).is_ok()
+        {
+            match self.history.get_mut(&id) {
+                Some(record) => record.after = after,
+                None => {
+                    self.history.insert(id, Record { id, before, after });
+                }
+            }
+            return id;
+        }
+        let id = set
+            .apply(transaction)
+            .expect("edits come from clamped selections in normal form, so they are valid");
         self.history.insert(id, Record { id, before, after });
+        if self.group.is_some() {
+            self.group = Some(Some(id));
+        }
         id
     }
 
