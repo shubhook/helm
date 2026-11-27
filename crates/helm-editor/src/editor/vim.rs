@@ -130,12 +130,22 @@ impl Editor {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
         let vertical = motion.is_vertical();
+        // Found once: read from every cursor, it would take turns with that
+        // cursor's text in `reads`.
+        let absolute = motion.is_absolute().then(|| {
+            let (to, _) = m::target(buffer, &mut reads, 0, motion, count, None)
+                .expect("gg and G always have a target");
+            m::settle(buffer, &mut reads, to).unwrap_or(to)
+        });
         let (start, moved) = self.vim_start_with(
             buffer,
             &mut reads,
             vertical,
             |buffer, reads, selection, goal| {
                 let p = settled_head(buffer, reads, selection)?;
+                if let Some(to) = absolute {
+                    return Some((to, 0));
+                }
                 Some(match m::target(buffer, reads, p, motion, count, goal) {
                     Some((to, goal)) if motion.lands_on_a_char() => (to, goal),
                     Some((to, goal)) => (m::settle(buffer, reads, to).unwrap_or(to), goal),
@@ -167,15 +177,24 @@ impl Editor {
         let len = buffer.len_bytes();
         let mut reads = Reads::default();
         let vertical = motion.is_vertical();
+        // Found once, as in `vim_move`.
+        let absolute = motion.is_absolute().then(|| {
+            let (to, _) = m::target(buffer, &mut reads, 0, motion, count, None)
+                .expect("gg and G always have a target");
+            m::vsettle(buffer, &mut reads, to).unwrap_or(to)
+        });
         let (start, moved) = self.vim_start_with(
             buffer,
             &mut reads,
             vertical,
             |buffer, reads, selection, goal| {
                 let (anchor, cursor) = visual_ends(buffer, reads, selection)?;
-                let (to, goal) = match m::target(buffer, reads, cursor, motion, count, goal) {
-                    Some((to, goal)) => (m::vsettle(buffer, reads, to).unwrap_or(to), goal),
-                    None => (cursor, goal.unwrap_or_else(|| m::goal_at(buffer, cursor))),
+                let (to, goal) = match absolute {
+                    Some(to) => (to, 0),
+                    None => match m::target(buffer, reads, cursor, motion, count, goal) {
+                        Some((to, goal)) => (m::vsettle(buffer, reads, to).unwrap_or(to), goal),
+                        None => (cursor, goal.unwrap_or_else(|| m::goal_at(buffer, cursor))),
+                    },
                 };
                 // The empty visual selection on the empty last line re-anchors
                 // on the line before once its cursor moves.
