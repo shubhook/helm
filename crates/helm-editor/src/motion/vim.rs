@@ -736,6 +736,31 @@ pub(crate) fn delete_lines(buffer: &Buffer, reads: &mut Reads, a: usize, b: usiz
     }
 }
 
+/// The text in `range`, copied chunk by chunk with [`TextBuffer::chunk_at`]
+/// into a string of exactly that size (T-109). `range` is a valid range of
+/// char boundaries, as every range an operator acts on is. A range that
+/// isn't falls back to [`TextBuffer::slice`], which checks it.
+pub(crate) fn copy(buffer: &Buffer, range: Range<usize>) -> String {
+    let mut text = String::with_capacity(range.len());
+    let mut at = range.start;
+    while at < range.end {
+        let Ok((chunk, start)) = buffer.chunk_at(at) else {
+            break;
+        };
+        let to = (range.end - start).min(chunk.len());
+        let Some(piece) = chunk.get(at - start..to).filter(|piece| !piece.is_empty()) else {
+            break;
+        };
+        text.push_str(piece);
+        at += piece.len();
+    }
+    if at == range.end {
+        text
+    } else {
+        buffer.slice(range).unwrap_or_default()
+    }
+}
+
 /// The text of lines `a` to `b`, as a linewise register piece holds it:
 /// ending with a line break, `newline` if the last line had none.
 pub(crate) fn lines_text(buffer: &Buffer, a: usize, b: usize, newline: &str) -> String {
@@ -744,7 +769,7 @@ pub(crate) fn lines_text(buffer: &Buffer, a: usize, b: usize, newline: &str) -> 
     } else {
         buffer.len_bytes()
     };
-    let mut text = buffer.slice(line_start(buffer, a)..end).unwrap_or_default();
+    let mut text = copy(buffer, line_start(buffer, a)..end);
     if !text.ends_with(['\n', '\r']) {
         text.push_str(newline);
     }

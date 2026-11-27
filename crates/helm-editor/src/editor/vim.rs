@@ -76,37 +76,58 @@ pub(crate) enum Target {
 /// linewise.
 fn taken<'a>(
     buffer: &Buffer,
-    spans: impl Iterator<Item = &'a Span>,
+    spans: impl Iterator<Item = &'a Span> + Clone,
     newline: &str,
 ) -> Option<Register> {
-    let mut pieces = Vec::new();
-    let mut lines = 0;
-    for span in spans {
+    let linewise = spans.clone().any(|span| matches!(span, Span::Lines(..)));
+    let count = spans.size_hint().0;
+    taken_or_read(
+        buffer,
+        spans.map(|span| (span, None)),
+        count,
+        linewise,
+        newline,
+    )
+}
+
+/// [`taken`], with each span's text given where the caller already has
+/// it: `Some` is used as the piece as it is, and `None` is copied out of
+/// the buffer. There are at most `count` spans, and `linewise` says
+/// whether any is linewise.
+fn taken_or_read<'a>(
+    buffer: &Buffer,
+    spans: impl Iterator<Item = (&'a Span, Option<String>)>,
+    count: usize,
+    linewise: bool,
+    newline: &str,
+) -> Option<Register> {
+    let mut pieces = Vec::with_capacity(count);
+    for (span, text) in spans {
         match span {
             Span::Lines(a, b) => {
-                pieces.push((m::lines_text(buffer, *a, *b, newline), true));
-                lines += 1;
+                pieces.push(text.unwrap_or_else(|| m::lines_text(buffer, *a, *b, newline)));
             }
             Span::Chars(range) if !range.is_empty() => {
-                pieces.push((buffer.slice(range.clone()).unwrap_or_default(), false));
+                let mut text = text.unwrap_or_else(|| m::copy(buffer, range.clone()));
+                if linewise {
+                    text.push_str(newline);
+                }
+                pieces.push(text);
             }
             Span::Chars(_) => {}
         }
     }
-    if pieces.is_empty() {
-        return None;
-    }
-    let linewise = lines > 0;
-    let pieces = pieces
-        .into_iter()
-        .map(|(mut piece, whole)| {
-            if linewise && !whole {
-                piece.push_str(newline);
-            }
-            piece
-        })
-        .collect();
-    Some(Register { pieces, linewise })
+    (!pieces.is_empty()).then_some(Register { pieces, linewise })
+}
+
+/// One selection's part of a Vim edit (T-109): its [`Piece`], and what the
+/// register copies of it if the motion already read it: a deleted span of
+/// lines before the last line as its byte range, and the text.
+struct Read {
+    home: usize,
+    span: Option<Span>,
+    lines: Option<Range<usize>>,
+    text: Option<String>,
 }
 
 /// Whether `text` holds a line break.
@@ -430,34 +451,53 @@ impl Editor {
     ) -> Result<Option<Register>, EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (start, pieces) = self.vim_start(buffer, &mut reads, piece);
-        let newline = self.format.newline();
-        let register = taken(
-            buffer,
-            pieces.iter().filter_map(|(_, span)| span.as_ref()),
-            newline.as_str(),
-        );
+        let mut piece = piece;
+        // A range is usually inside the text its motion just read, so its
+        // register piece is copied from there, with no second read of the
+        // buffer. A deleted span of whole lines before the last line is the
+        // bytes from its first line's start to the next line's start, which
+        // the delete below reuses.
+        let (start, mut read) = self.vim_start(buffer, &mut reads, |buffer, reads, selection| {
+            let (home, span) = piece(buffer, reads, selection)?;
+            let (lines, text) = match &span {
+                Some(Span::Chars(range)) if !range.is_empty() => {
+                    (None, reads.text(range).map(str::to_owned))
+                }
+                &Some(Span::Lines(a, b)) if !change && b + 1 < buffer.len_lines() => {
+                    let range = m::lines_range(buffer, a, b);
+                    let text = reads.text(&range).map(str::to_owned);
+                    (Some(range), text)
+                }
+                _ => (None, None),
+            };
+            Some(Read {
+                home,
+                span,
+                lines,
+                text,
+            })
+        });
         let primary = start.primary_index();
         let before = if at_homes {
-            let homes = pieces.iter().map(|&(home, _)| Selection::cursor(home));
+            let homes = read.iter().map(|r| Selection::cursor(r.home));
             normal(homes.collect(), primary)
         } else {
             start
         };
 
         // Each selection's byte range, and whether it is linewise.
-        let mut ranges: Vec<Option<(Range<usize>, bool)>> = pieces
+        let mut ranges: Vec<Option<(Range<usize>, bool)>> = read
             .iter()
-            .map(|(_, span)| match span {
+            .map(|r| match &r.span {
                 Some(Span::Chars(range)) => Some((range.clone(), false)),
                 _ => None,
             })
             .collect();
-        let mut spans: Vec<(usize, usize, usize)> = pieces
+        let mut spans: Vec<(usize, usize, usize)> = read
             .iter()
             .enumerate()
-            .filter_map(|(i, (_, span))| match span {
-                Some(Span::Lines(a, b)) => Some((*a, *b, i)),
+            .filter_map(|(i, r)| match r.span {
+                Some(Span::Lines(a, b)) => Some((a, b, i)),
                 _ => None,
             })
             .collect();
@@ -470,16 +510,34 @@ impl Editor {
                 b = b.max(spans[j].1);
                 j += 1;
             }
-            let range = if change {
-                m::change_lines(buffer, &mut reads, a, b)
-            } else {
-                m::delete_lines(buffer, &mut reads, a, b)
+            // One span on its own before the last line deletes the range
+            // read with it, which is also its register piece.
+            let own = &mut read[spans[k].2];
+            let range = match own.lines.clone().filter(|_| j == k + 1) {
+                Some(range) => {
+                    if own.text.is_none() {
+                        own.text = Some(m::copy(buffer, range.clone()));
+                    }
+                    range
+                }
+                None if change => m::change_lines(buffer, &mut reads, a, b),
+                None => m::delete_lines(buffer, &mut reads, a, b),
             };
             for &(_, _, i) in &spans[k..j] {
                 ranges[i] = Some((range.clone(), true));
             }
             k = j;
         }
+        let newline = self.format.newline();
+        let count = read.len();
+        let register = taken_or_read(
+            buffer,
+            read.iter_mut()
+                .filter_map(|r| Some((r.span.as_ref()?, r.text.take()))),
+            count,
+            !spans.is_empty(),
+            newline.as_str(),
+        );
 
         let mut sorted: Vec<Range<usize>> = ranges
             .iter()
@@ -504,13 +562,13 @@ impl Editor {
         // Where each cursor lands in the text after the edit: at its range's
         // start, or where it was, or, inside a range it didn't make, where
         // that range began.
-        let places: Vec<(usize, bool)> = pieces
+        let places: Vec<(usize, bool)> = read
             .iter()
             .zip(&ranges)
-            .map(|((home, _), range)| {
+            .map(|(r, range)| {
                 let (at, linewise) = match range {
                     Some((range, linewise)) => (range.start, *linewise),
-                    None => (*home, false),
+                    None => (r.home, false),
                 };
                 let j = joined.partition_point(|r| r.end <= at);
                 let at = match joined.get(j) {
@@ -869,7 +927,7 @@ impl Editor {
                 let (range, ends_line) = match span {
                     Span::Lines(a, b) => {
                         let range = m::lines_range(buffer, *a, *b);
-                        let ended = buffer.slice(range.clone()).unwrap_or_default();
+                        let ended = m::copy(buffer, range.clone());
                         let (_, end) = split_break(&ended);
                         (range, end.to_owned())
                     }

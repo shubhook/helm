@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use helm_text::BufferId;
 
@@ -110,8 +111,9 @@ pub enum Request {
 #[derive(Clone, Debug, Default)]
 pub struct Session {
     /// The registers by name: `"`, `0` to `9`, `a` to `z`, `-` and `+`.
-    /// An empty register has no entry.
-    registers: BTreeMap<char, Register>,
+    /// An empty register has no entry. Registers written together, such
+    /// as `"` and `1`, share one copy of the text.
+    registers: BTreeMap<char, Arc<Register>>,
     /// The last change `.` repeats.
     last_change: Option<Vec<Invocation>>,
     /// The change still being recorded, while its undo group is open.
@@ -147,7 +149,9 @@ impl Session {
     /// isn't a register. `'"'` gives what the unnamed register holds, `A`
     /// to `Z` read as `a` to `z`, `*` reads as `+`, and `_` is always empty.
     pub fn register(&self, name: char) -> Option<&Register> {
-        self.registers.get(&stored_name(name)?)
+        self.registers
+            .get(&stored_name(name)?)
+            .map(|register| &**register)
     }
 
     /// Tells the session the system clipboard now holds `text`, or nothing
@@ -172,10 +176,10 @@ impl Session {
         let linewise = text.ends_with(['\n', '\r']);
         self.registers.insert(
             '+',
-            Register {
+            Arc::new(Register {
                 pieces: vec![text],
                 linewise,
-            },
+            }),
         );
     }
 
@@ -200,11 +204,12 @@ impl Session {
         if register.pieces.is_empty() {
             return;
         }
+        let register = Arc::new(register);
         let register = match name.filter(|&name| name != '"') {
             None => {
                 match write {
                     Write::Yank => {
-                        self.registers.insert('0', register.clone());
+                        self.registers.insert('0', Arc::clone(&register));
                     }
                     Write::Delete
                         if register.linewise
@@ -215,10 +220,10 @@ impl Session {
                                 self.registers.insert(char::from(n + 1), moved);
                             }
                         }
-                        self.registers.insert('1', register.clone());
+                        self.registers.insert('1', Arc::clone(&register));
                     }
                     Write::Delete => {
-                        self.registers.insert('-', register.clone());
+                        self.registers.insert('-', Arc::clone(&register));
                     }
                 }
                 register
@@ -227,10 +232,14 @@ impl Session {
             Some(name @ 'A'..='Z') => {
                 let name = name.to_ascii_lowercase();
                 let joined = match self.registers.remove(&name) {
-                    Some(old) => append(old, register, newline),
+                    Some(old) => Arc::new(append(
+                        Arc::unwrap_or_clone(old),
+                        Arc::unwrap_or_clone(register),
+                        newline,
+                    )),
                     None => register,
                 };
-                self.registers.insert(name, joined.clone());
+                self.registers.insert(name, Arc::clone(&joined));
                 joined
             }
             Some(name) => {
@@ -242,7 +251,7 @@ impl Session {
                     self.clipboard = Some(text.clone());
                     requests.push(Request::SetClipboard { text });
                 }
-                self.registers.insert(name, register.clone());
+                self.registers.insert(name, Arc::clone(&register));
                 register
             }
         };
