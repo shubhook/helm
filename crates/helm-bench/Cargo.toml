@@ -58,3 +58,7 @@ harness = false
 [[bench]]
 name = "cursor"
 harness = false
+
+[[bench]]
+name = "vim"
+harness = false
