@@ -129,6 +129,12 @@ impl VimMotion {
     pub(crate) fn is_vertical(self) -> bool {
         matches!(self, Self::Down | Self::Up)
     }
+
+    /// Whether this is `gg` or `G`, whose target doesn't depend on the
+    /// cursor.
+    pub(crate) fn is_absolute(self) -> bool {
+        matches!(self, Self::FirstLine | Self::LastLine)
+    }
 }
 
 /// What an operator acts on from one cursor.

@@ -320,11 +320,14 @@
 //! [`Editor::redo`](crate::Editor::redo) `n` times, stopping early when
 //! there is nothing left, then turn each selection the editor put back into
 //! a cursor at its start, settled. After `u` that is where the change
-//! began. After `ctrl-r` it is the start of the selections from after the
+//! began: each selection's settled head for a normal-mode operator, a
+//! one-key edit, `o` or `O`, and the selection's start for a visual edit.
+//! After `ctrl-r` it is the start of the selections from after the
 //! change: after redoing `ihello<Esc>` the cursor is just past `hello`,
 //! where Vim puts it on the `h` (measured in Vim 9.1). A `Blocked` error
 //! comes back as [`CommandError::Editor`](crate::CommandError::Editor),
-//! with nothing changed by the step that failed.
+//! with nothing changed by the step that failed. If that was the first
+//! step, nothing changes at all: the selections and goal columns stay.
 //!
 //! # Measured against Vim
 //!
@@ -341,6 +344,30 @@
 //!   in Vim.
 //! - `ctrl-r` leaves the cursor after the redone text.
 //! - `cj` and `ck` that find nothing enter insert mode.
+//!
+//! T-111 ran `d` and `c` with 58 motion and count forms from random
+//! cursors in 20,000 short texts of ASCII lines through the same Vim, and
+//! found five more kinds of difference. Khakha chose to keep all five as
+//! they are. Each follows the rules above, and the oracle in
+//! `tests/vim_oracle.rs` pins each for `d`:
+//!
+//! - Vim's `:help d` exception: a charwise `d` across lines with only
+//!   blanks before its start and after its end becomes linewise. `d2w`
+//!   from `a` in `"  ab\n  "` leaves `""` in Vim and `"  "` here.
+//! - A count of 2 or more for `$`, `dd` or `cc` on the last line is an
+//!   error in Vim, which changes nothing and stays in normal mode. Here it
+//!   acts on the last line: `2D` from `c` in `"a\nb\nc"` leaves `"a\nb\n"`,
+//!   and `2$` moves to the line's last char.
+//! - An `e` or `E` with no next run goes to the text's last char in Vim,
+//!   and stays here. `de` from `.` in `"cd.  "` leaves `"cd"` in Vim and
+//!   `"cd  "` here.
+//! - A counted `b` or `B` under an operator that runs out on an empty
+//!   first line cancels the operator in Vim. `d2b` from `x` in `"\nx"`
+//!   leaves the text as it was in Vim and `"x"` here.
+//! - `^` on a line of only blanks is on the last blank in Vim, so `d^`
+//!   from the line's start keeps one blank. Here it deletes them all.
+//!
+//! Visual-mode `d` and `c` weren't part of that run.
 //!
 //! # Visual-mode commands
 //!

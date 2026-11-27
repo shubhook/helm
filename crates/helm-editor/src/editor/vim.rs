@@ -61,32 +61,45 @@ type Piece = (usize, Option<Span>);
 
 impl Editor {
     /// The selections a Vim command starts from and what `each` reads from
-    /// each one, with each one's goal column when `keep_goals` is set and
-    /// it has one. The selections are this editor's own when `each` finds
+    /// each one. The selections are this editor's own when `each` finds
     /// every offset valid, and clamped first otherwise. Drops the goals.
     fn vim_start<T>(
         &mut self,
         buffer: &Buffer,
         reads: &mut Reads,
-        keep_goals: bool,
         mut each: impl FnMut(&Buffer, &mut Reads, Selection) -> Option<T>,
-    ) -> (Selections, Vec<T>, Vec<usize>) {
+    ) -> (Selections, Vec<T>) {
+        self.vim_start_with(buffer, reads, false, |b, r, s, _| each(b, r, s))
+    }
+
+    /// [`vim_start`](Self::vim_start), with `each` also given the
+    /// selection's goal column when `keep_goals` is set and it has one. So
+    /// `each` can run a motion as soon as it has read a selection, while
+    /// what it read is still in `reads`.
+    fn vim_start_with<T>(
+        &mut self,
+        buffer: &Buffer,
+        reads: &mut Reads,
+        keep_goals: bool,
+        mut each: impl FnMut(&Buffer, &mut Reads, Selection, Option<usize>) -> Option<T>,
+    ) -> (Selections, Vec<T>) {
         let goals = std::mem::take(&mut self.goals);
+        let goals = if keep_goals { goals } else { Vec::new() };
         let fast: Option<Vec<T>> = self
             .selections
             .as_slice()
             .iter()
-            .map(|&selection| each(buffer, reads, selection))
+            .enumerate()
+            .map(|(i, &selection)| each(buffer, reads, selection, goals.get(i).copied()))
             .collect();
         if let Some(values) = fast {
-            let goals = if keep_goals { goals } else { Vec::new() };
-            return (self.selections.clone(), values, goals);
+            return (self.selections.clone(), values);
         }
         let list = clamp_each(buffer, &self.selections);
         let clamped = normal(list.clone(), self.selections.primary_index());
         // Each selection keeps its goal through clamping, as in
         // `move_heads`.
-        let goals = if keep_goals && goals.len() == list.len() {
+        let goals = if goals.len() == list.len() {
             let members = list.iter().map(Selection::start).zip(goals).collect();
             owned_goals(members, &clamped)
         } else {
@@ -95,9 +108,13 @@ impl Editor {
         let values = clamped
             .as_slice()
             .iter()
-            .map(|&selection| each(buffer, reads, selection).expect("clamped offsets are valid"))
+            .enumerate()
+            .map(|(i, &selection)| {
+                each(buffer, reads, selection, goals.get(i).copied())
+                    .expect("clamped offsets are valid")
+            })
             .collect();
-        (clamped, values, goals)
+        (clamped, values)
     }
 
     /// Moves every cursor by `motion` in normal mode (T-108): each
@@ -113,21 +130,31 @@ impl Editor {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
         let vertical = motion.is_vertical();
-        let (start, heads, goals) = self.vim_start(buffer, &mut reads, vertical, settled_head);
-        let mut cursors = Vec::with_capacity(heads.len());
-        let mut members = Vec::new();
-        for (i, &p) in heads.iter().enumerate() {
-            let goal = goals.get(i).copied();
-            let (to, goal) = match m::target(buffer, &mut reads, p, motion, count, goal) {
-                Some((to, goal)) if motion.lands_on_a_char() => (to, goal),
-                Some((to, goal)) => (m::settle(buffer, &mut reads, to).unwrap_or(to), goal),
-                None => (p, goal.unwrap_or_else(|| m::goal_at(buffer, p))),
-            };
-            cursors.push(Selection::cursor(to));
-            if vertical {
-                members.push((to, goal));
-            }
-        }
+        // Found once: read from every cursor, it would take turns with that
+        // cursor's text in `reads`.
+        let absolute = motion.is_absolute().then(|| {
+            let (to, _) = m::target(buffer, &mut reads, 0, motion, count, None)
+                .expect("gg and G always have a target");
+            m::settle(buffer, &mut reads, to).unwrap_or(to)
+        });
+        let (start, moved) = self.vim_start_with(
+            buffer,
+            &mut reads,
+            vertical,
+            |buffer, reads, selection, goal| {
+                let p = settled_head(buffer, reads, selection)?;
+                if let Some(to) = absolute {
+                    return Some((to, 0));
+                }
+                Some(match m::target(buffer, reads, p, motion, count, goal) {
+                    Some((to, goal)) if motion.lands_on_a_char() => (to, goal),
+                    Some((to, goal)) => (m::settle(buffer, reads, to).unwrap_or(to), goal),
+                    None => (p, goal.unwrap_or_else(|| m::goal_at(buffer, p))),
+                })
+            },
+        );
+        let cursors = moved.iter().map(|&(to, _)| Selection::cursor(to)).collect();
+        let members = if vertical { moved } else { Vec::new() };
         let selections = normal(cursors, start.primary_index());
         if vertical {
             self.goals = owned_goals(members, &selections);
@@ -150,29 +177,45 @@ impl Editor {
         let len = buffer.len_bytes();
         let mut reads = Reads::default();
         let vertical = motion.is_vertical();
-        let (start, ends, goals) = self.vim_start(buffer, &mut reads, vertical, visual_ends);
-        let mut selections = Vec::with_capacity(ends.len());
-        let mut members = Vec::new();
-        for (i, &(anchor, cursor)) in ends.iter().enumerate() {
-            let goal = goals.get(i).copied();
-            let (to, goal) = match m::target(buffer, &mut reads, cursor, motion, count, goal) {
-                Some((to, goal)) => (m::vsettle(buffer, &mut reads, to).unwrap_or(to), goal),
-                None => (cursor, goal.unwrap_or_else(|| m::goal_at(buffer, cursor))),
-            };
-            // The empty visual selection on the empty last line re-anchors on
-            // the line before once its cursor moves.
-            let anchor = if anchor == len && to != cursor {
-                m::vsettle(buffer, &mut reads, anchor).unwrap_or(anchor)
-            } else {
-                anchor
-            };
-            let (anchor, head) = m::encode(buffer, &mut reads, anchor, to);
-            let selection = Selection::new(anchor, head);
-            selections.push(selection);
-            if vertical {
-                members.push((selection.start(), goal));
-            }
-        }
+        // Found once, as in `vim_move`.
+        let absolute = motion.is_absolute().then(|| {
+            let (to, _) = m::target(buffer, &mut reads, 0, motion, count, None)
+                .expect("gg and G always have a target");
+            m::vsettle(buffer, &mut reads, to).unwrap_or(to)
+        });
+        let (start, moved) = self.vim_start_with(
+            buffer,
+            &mut reads,
+            vertical,
+            |buffer, reads, selection, goal| {
+                let (anchor, cursor) = visual_ends(buffer, reads, selection)?;
+                let (to, goal) = match absolute {
+                    Some(to) => (to, 0),
+                    None => match m::target(buffer, reads, cursor, motion, count, goal) {
+                        Some((to, goal)) => (m::vsettle(buffer, reads, to).unwrap_or(to), goal),
+                        None => (cursor, goal.unwrap_or_else(|| m::goal_at(buffer, cursor))),
+                    },
+                };
+                // The empty visual selection on the empty last line re-anchors
+                // on the line before once its cursor moves.
+                let anchor = if anchor == len && to != cursor {
+                    m::vsettle(buffer, reads, anchor).unwrap_or(anchor)
+                } else {
+                    anchor
+                };
+                let (anchor, head) = m::encode(buffer, reads, anchor, to);
+                Some((Selection::new(anchor, head), goal))
+            },
+        );
+        let selections = moved.iter().map(|&(selection, _)| selection).collect();
+        let members = if vertical {
+            moved
+                .into_iter()
+                .map(|(selection, goal)| (selection.start(), goal))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let selections = normal(selections, start.primary_index());
         if vertical {
             self.goals = owned_goals(members, &selections);
@@ -187,7 +230,7 @@ impl Editor {
     pub(crate) fn vim_visual(&mut self, set: &BufferSet) -> Result<(), EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (start, heads, _) = self.vim_start(buffer, &mut reads, false, settled_head);
+        let (start, heads) = self.vim_start(buffer, &mut reads, settled_head);
         let list = heads
             .iter()
             .map(|&p| {
@@ -204,7 +247,7 @@ impl Editor {
     pub(crate) fn vim_exit_visual(&mut self, set: &BufferSet) -> Result<(), EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (start, ends, _) = self.vim_start(buffer, &mut reads, false, visual_ends);
+        let (start, ends) = self.vim_start(buffer, &mut reads, visual_ends);
         let list = ends
             .iter()
             .map(|&(_, cursor)| {
@@ -220,7 +263,7 @@ impl Editor {
     pub(crate) fn vim_swap_ends(&mut self, set: &BufferSet) -> Result<(), EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (start, ends, _) = self.vim_start(buffer, &mut reads, false, visual_ends);
+        let (start, ends) = self.vim_start(buffer, &mut reads, visual_ends);
         let list = ends
             .iter()
             .map(|&(anchor, cursor)| {
@@ -243,7 +286,7 @@ impl Editor {
         count: Option<usize>,
     ) -> Result<Option<TransactionId>, EditorError> {
         let change = operator == Operator::Change;
-        self.vim_edit(set, change, |buffer, reads, selection| {
+        self.vim_edit(set, change, true, |buffer, reads, selection| {
             let p = settled_head(buffer, reads, selection)?;
             Some((p, m::operator_span(buffer, reads, p, motion, count, change)))
         })
@@ -260,6 +303,7 @@ impl Editor {
         self.vim_edit(
             set,
             operator == Operator::Change,
+            false,
             |buffer, reads, selection| {
                 let (anchor, cursor) = visual_ends(buffer, reads, selection)?;
                 let home = anchor.min(cursor);
@@ -278,16 +322,25 @@ impl Editor {
     /// the `vim` module docs' "Operators" describe: line spans that overlap
     /// or touch join first, then byte ranges that overlap. With `change`,
     /// opens an undo group first and leaves each cursor where typing
-    /// starts. Otherwise each cursor settles.
+    /// starts. Otherwise each cursor settles. With `at_homes`, undo puts
+    /// back a cursor at each piece's home instead of the selections.
     fn vim_edit(
         &mut self,
         set: &mut BufferSet,
         change: bool,
+        at_homes: bool,
         piece: impl FnMut(&Buffer, &mut Reads, Selection) -> Option<Piece>,
     ) -> Result<Option<TransactionId>, EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (before, pieces, _) = self.vim_start(buffer, &mut reads, false, piece);
+        let (start, pieces) = self.vim_start(buffer, &mut reads, piece);
+        let primary = start.primary_index();
+        let before = if at_homes {
+            let homes = pieces.iter().map(|&(home, _)| Selection::cursor(home));
+            normal(homes.collect(), primary)
+        } else {
+            start
+        };
 
         // Each selection's byte range, and whether it is linewise.
         let mut ranges: Vec<Option<(Range<usize>, bool)>> = pieces
@@ -368,31 +421,24 @@ impl Editor {
         if change {
             self.begin_undo_group();
         }
-        let primary = before.primary_index();
+        let moved = normal(
+            places
+                .iter()
+                .map(|&(at, _)| Selection::cursor(at))
+                .collect(),
+            primary,
+        );
         let id = if joined.is_empty() {
+            self.selections = moved;
             None
         } else {
             let transaction: Transaction = joined
                 .into_iter()
                 .map(|range| Edit::delete(self.buffer, range))
                 .collect();
-            let after = normal(
-                places
-                    .iter()
-                    .map(|&(at, _)| Selection::cursor(at))
-                    .collect(),
-                primary,
-            );
-            Some(self.apply(set, transaction, before, after))
+            Some(self.apply(set, transaction, before, moved))
         };
         if change {
-            self.selections = normal(
-                places
-                    .iter()
-                    .map(|&(at, _)| Selection::cursor(at))
-                    .collect(),
-                primary,
-            );
             return Ok(id);
         }
 
@@ -427,7 +473,7 @@ impl Editor {
     ) -> Result<(), EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (start, heads, _) = self.vim_start(buffer, &mut reads, false, settled_head);
+        let (start, heads) = self.vim_start(buffer, &mut reads, settled_head);
         let list = heads
             .iter()
             .map(|&p| {
@@ -447,7 +493,8 @@ impl Editor {
     /// `o` (with `below`) and `O` (T-108): opens an undo group, then inserts
     /// a line break at the end of each cursor's line's text, or at its
     /// start, as the group's first edit, and puts each cursor on the new
-    /// empty line. Undo puts back the cursors from before.
+    /// empty line. Undo puts back a cursor at each settled head from
+    /// before.
     pub(crate) fn vim_open_line(
         &mut self,
         set: &mut BufferSet,
@@ -455,7 +502,12 @@ impl Editor {
     ) -> Result<TransactionId, EditorError> {
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (before, heads, _) = self.vim_start(buffer, &mut reads, false, settled_head);
+        let (start, heads) = self.vim_start(buffer, &mut reads, settled_head);
+        let primary = start.primary_index();
+        let before = normal(
+            heads.iter().map(|&p| Selection::cursor(p)).collect(),
+            primary,
+        );
         let points: Vec<usize> = heads
             .iter()
             .map(|&p| {
@@ -483,7 +535,7 @@ impl Editor {
                 Selection::cursor(at + earlier * newline.len() + shift)
             })
             .collect();
-        let after = normal(cursors, before.primary_index());
+        let after = normal(cursors, primary);
         self.begin_undo_group();
         Ok(self.apply(set, transaction, before, after))
     }
@@ -491,10 +543,10 @@ impl Editor {
     /// Escape in insert mode (T-108): closes the undo group and moves each
     /// cursor back one char unless it starts its line, then settles it.
     pub(crate) fn vim_leave_insert(&mut self, set: &BufferSet) -> Result<(), EditorError> {
-        self.end_undo_group();
         let buffer = self.buffer_in(set)?;
+        self.end_undo_group();
         let mut reads = Reads::default();
-        let (start, cursors, _) = self.vim_start(buffer, &mut reads, false, |b, r, s| {
+        let (start, cursors) = self.vim_start(buffer, &mut reads, |b, r, s| {
             if !s.is_empty() && !r.is_valid(b, s.anchor) {
                 return None;
             }
@@ -507,8 +559,9 @@ impl Editor {
 
     /// `u` (or `ctrl-r`, with `redo`) (T-108): undoes or redoes up to
     /// `count` times, stopping when there is nothing left, then turns each
-    /// selection into a cursor at its start, settled. An error stops the
-    /// steps and comes back after the cursors settle.
+    /// selection into a cursor at its start, settled. An error in the first
+    /// step changes nothing. A later one stops the steps and comes back
+    /// after the cursors settle.
     pub(crate) fn vim_history(
         &mut self,
         set: &mut BufferSet,
@@ -516,11 +569,12 @@ impl Editor {
         count: Option<usize>,
     ) -> Result<(), EditorError> {
         let mut result = Ok(());
-        for _ in 0..count.unwrap_or(1).max(1) {
-            let step = if redo { self.redo(set) } else { self.undo(set) };
-            match step {
+        for step in 0..count.unwrap_or(1).max(1) {
+            let done = if redo { self.redo(set) } else { self.undo(set) };
+            match done {
                 Ok(Some(_)) => {}
                 Ok(None) => break,
+                Err(error) if step == 0 => return Err(error),
                 Err(error) => {
                     result = Err(error);
                     break;
@@ -529,7 +583,7 @@ impl Editor {
         }
         let buffer = self.buffer_in(set)?;
         let mut reads = Reads::default();
-        let (start, cursors, _) = self.vim_start(buffer, &mut reads, false, |b, r, s| {
+        let (start, cursors) = self.vim_start(buffer, &mut reads, |b, r, s| {
             if !r.is_valid(b, s.end()) {
                 return None;
             }
