@@ -81,10 +81,12 @@ pub const INNER_WORD, A_WORD, SELECT_INNER_WORD, SELECT_A_WORD, ...: &str;  // 4
 
 Two existing functions change, as their doc comments now say. `CommandRegistry::run` runs with a fresh `Session` and drops the requests, so T-106 to T-108's callers see no difference; it is already filled in. `Dispatcher::resolve` gains the register rule, the command-line rule (rule 5) and a pending register in rules 2 and 3, and `KeyState::cancel` drops a pending register and leaves the command line. Their code is unchanged in this PR except for one `todo!()` arm for `Action::Register`, which no existing binding reaches. Every T-101 to T-108 and T-110 test still passes.
 
-### How this compiles without the two pending grants
+### How the two grants landed
 
-- **The register argument (open question 1).** `resolve` must hand the pending register to the command, and `.` must replay it. The natural place is a `CommandArgs::register` field, but adding one breaks the two `CommandArgs` literals in `tests/commands.rs` (lines 266 and 289). So this PR adds no field. The docs say where the register goes depends on question 1, and every test reaches registers only through keys and `Session::register`, never by naming the field. The tests hold whichever way question 1 goes.
-- **T-108's pinned lists (open question 2).** `tests/vim_keymap.rs` pins `vim::keymap()` at six modes and 115 bindings, `vim_commands::ALL` at 55 ids (`[&str; 55]`) and `with_vim_commands()` at 91 commands. So this PR adds the 52 ids as constants outside `ALL`, documents the 391 bindings and two modes on `vim::keymap` as T-109's, and registers nothing. The new tests reach the keymap and registry through one helper, `tests/vim_harness/mod.rs`, which names `vim::keymap()` and `with_vim_commands()`. Under option (a) that helper stays; under option (b) its two lines name the new functions.
+The spec PR compiled without either grant. Khakha granted both, and PR #42 (merged as `7638344`) made the edits in their own commit, `a6c9cff`:
+
+- **The register argument (question 1).** `CommandArgs::register: Option<char>` holds the pending register, so `resolve` hands it to the command with the count and `.` replays it. The two `CommandArgs` literals in `tests/commands.rs` that open at lines 266 and 289 now end in `..CommandArgs::default()` in place of `count: None`. No assertion changed.
+- **T-108's pinned lists (question 2, option (a)).** The T-109 ids, bindings and commands joined T-108's: `vim_commands::ALL` holds 107 ids, `with_vim_commands()` 143 commands, and `vim::keymap()` eight modes and 506 bindings. `tests/vim_keymap.rs` asserts those counts. `the_keymap_has_exactly_the_documented_bindings` compares the whole keymap with T-108's 115 rows, unchanged, followed by a `t109_documented()` list of the 391 new ones. `tests/vim_harness/mod.rs` still names `vim::keymap()` and `with_vim_commands()` once each, as before.
 
 ### What the existing code and tests allow
 
