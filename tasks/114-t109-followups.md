@@ -31,7 +31,7 @@ None of 1 to 3 changes an existing test's assertion. Every existing test passes 
 
 ## The work
 
-1. **The bracket scan's cap.** A bracket object reads at most 1 MiB (`1 << 20` bytes) each way from where its scan starts: the cursor, or the first char of a longer visual selection. A pair counts only if both brackets lie from 1 MiB before that point up to, not including, 1 MiB after it. A scan that reaches either end without its bracket finds no pair. A count and a visual growth step share the same window. `vim.rs` lists the cap under "Measured against Vim".
+1. **The bracket scan's cap.** A bracket object reads at most 1 MiB (`1 << 20` bytes) each way from where its scan starts: the cursor, or the first char of a longer visual selection. A pair counts only if both brackets lie from 1 MiB before that point up to, not including, 1 MiB after it. A scan that reaches either end without its bracket finds no pair. A count and a visual growth step share the same window. The readers read at least 4 bytes per window and end each window on a char boundary, so they can read up to 3 bytes past the window. So `find_pair` checks both brackets' offsets against the window before it returns a pair. `vim.rs` lists the cap under "Measured against Vim".
 2. **Visual bracket objects from a longer selection.** Measured in Vim 9.1 (`vim -u NONE -N -i NONE -n`, `binary`, `noeol`), Vim's rule for a selection longer than one char is:
    - The scan starts before the selection's first char, so a bracket there isn't the pair's. The pair is the `n`th out from there.
    - `a` selects that pair.
@@ -90,7 +90,7 @@ Each is listed under "Measured against Vim" in `vim.rs`:
 
 | File | What it proves |
 | --- | --- |
-| `crates/helm-editor/tests/vim_t114.rs` (13, new) | Answers 2 and 3 with the Vim rows above, the cap with a pair just inside and just outside 1 MiB each way, a count and a visual growth stopped by the cap, the forward direction of a grown selection, the kept differences, and the CRLF row for `p`. Ten of the 13 fail on main at `7638344`. The three that pass there are the CRLF `p` test, the capped visual growth (main keeps that selection too) and the escaped quote that never opens a pair (main counts a single backslash too). |
+| `crates/helm-editor/tests/vim_t114.rs` (19, new) | Answers 2 and 3 with the Vim rows above, the cap with a pair just inside and just outside 1 MiB each way, a count and a visual growth stopped by the cap, the forward direction of a grown selection, the kept differences, and the CRLF row for `p`. Six more come from council round 1: a bracket just outside the window at a rope chunk boundary on either side, a visual growth to an outer pair outside the window, a multi-byte char across either end of the window, and a backslash ending the line before a quote. Ten of the first 13 fail on main at `7638344`. The three that pass there are the CRLF `p` test, the capped visual growth (main keeps that selection too) and the escaped quote that never opens a pair (main counts a single backslash too). Of the six round 1 tests, four fail at `b34716f`. The window-start straddle and the line-end backslash pass there and guard against regressions. |
 
 Every existing test passes unchanged.
 
