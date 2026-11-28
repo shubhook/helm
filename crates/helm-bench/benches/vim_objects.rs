@@ -192,22 +192,33 @@ fn vim_objects(c: &mut Criterion) {
         "diw_undo ends where it began"
     );
 
-    // `u` after an object edit puts each cursor at its range's start, so
-    // one untimed iteration first moves the cursors there, inside the
-    // quotes, and every timed iteration starts and ends there.
+    // `u` after an object edit puts each cursor at its range's start, not
+    // where the cursor began, so an iteration doesn't end at its starting
+    // cursors. Each iteration gets an editor at the task's cursors from
+    // setup, outside the timed code, and drops it there too. One untimed
+    // run first checks what an iteration does.
     let mut v = typist(&let_lines);
     let ci_quote = events("ci\"x\u{1b}u");
     v.keys(&dispatcher, &mut set, &ci_quote);
-    let settled = v.editor.selections().clone();
-    assert_ne!(settled, let_lines, "the cursors moved into the quotes");
-    group.bench_function("ci_quote_undo_1000_cursors_10mb", |bench| {
-        bench.iter(|| v.keys(&dispatcher, &mut set, &ci_quote))
-    });
-    assert_eq!(
+    assert_eq!(set.get(id).map(|b| b.len_bytes()), Some(text.len()));
+    assert_ne!(
         v.editor.selections(),
-        &settled,
-        "ci_quote_undo ends where it began"
+        &let_lines,
+        "u leaves each cursor inside the quotes"
     );
+    let at_let_lines = editor_at(&let_lines);
+    group.bench_function("ci_quote_undo_1000_cursors_10mb", |bench| {
+        bench.iter_batched(
+            || at_let_lines.clone(),
+            |mut editor| {
+                std::mem::swap(&mut v.editor, &mut editor);
+                v.keys(&dispatcher, &mut set, &ci_quote);
+                std::mem::swap(&mut v.editor, &mut editor);
+                editor
+            },
+            BatchSize::SmallInput,
+        )
+    });
 
     // The same holds for `di{`: `u` puts each cursor at the start of the
     // block's first inner line.
@@ -219,18 +230,19 @@ fn vim_objects(c: &mut Criterion) {
         "di{{ empties a block of four lines at every cursor"
     );
     run(&mut editor, &mut set, &mut session, &undo);
-    let settled = editor.selections().clone();
+    assert_eq!(set.get(id).map(|b| b.len_bytes()), Some(text.len()));
+    let at_println_lines = editor_at(&println_lines);
     group.bench_function("di_brace_undo_1000_cursors_10mb", |bench| {
-        bench.iter(|| {
-            run(&mut editor, &mut set, &mut session, &di_brace);
-            run(&mut editor, &mut set, &mut session, &undo);
-        })
+        bench.iter_batched(
+            || at_println_lines.clone(),
+            |mut editor| {
+                run(&mut editor, &mut set, &mut session, &di_brace);
+                run(&mut editor, &mut set, &mut session, &undo);
+                editor
+            },
+            BatchSize::SmallInput,
+        )
     });
-    assert_eq!(
-        editor.selections(),
-        &settled,
-        "di_brace_undo ends where it began"
-    );
 
     let mut editor = editor_at(&middle_comment);
     let version = set.version(id);
