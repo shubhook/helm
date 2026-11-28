@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
@@ -133,8 +134,73 @@ pub(crate) use vim::{Entry, Operator, Target};
 /// `helm-ui` must call `end_undo_group` on every open editor right after
 /// [`Dispatcher::set_keymap`](crate::Dispatcher::set_keymap), before any
 /// key reaches the new keymap. Otherwise typing in the new keymap folds
-/// into the group the old one opened. Grouping VS Code's typing by pauses
-/// and cursor moves is a later task.
+/// into the group the old one opened. Under [`UndoGrouping::Typing`] the
+/// dispatcher also ends the group itself when a switch changes the
+/// grouping (T-112).
+///
+/// # Typing groups (T-112)
+///
+/// Under [`UndoGrouping::Typing`], VS Code's policy, the editor opens and
+/// closes groups itself, so a run of typing undoes in one step. The
+/// grouping is [`UndoGrouping::Explicit`] until
+/// [`set_undo_grouping`](Self::set_undo_grouping) changes it, and then
+/// nothing below applies.
+///
+/// Each editing command has a kind:
+///
+/// - typing: [`insert`](Self::insert), whatever its text, and
+///   [`newline`](Self::newline);
+/// - deleting backward: [`delete_backward`](Self::delete_backward), and
+///   [`delete_to`](Self::delete_to) with [`Motion::Left`], [`Motion::Up`],
+///   [`Motion::WordLeft`], [`Motion::LineStart`] or [`Motion::TextStart`];
+/// - deleting forward: [`delete_forward`](Self::delete_forward), and
+///   `delete_to` with [`Motion::Right`], [`Motion::Down`],
+///   [`Motion::WordRight`], [`Motion::LineEnd`] or [`Motion::TextEnd`];
+/// - other: every other edit this editor makes, such as Vim's commands.
+///
+/// With no explicit group open, a typing or deleting edit that applies a
+/// transaction joins the open typing group, amending its transaction as
+/// above, only if all of these hold. Otherwise the open typing group ends,
+/// a new one opens, and the edit is its first.
+///
+/// 1. A typing group is open. [`end_undo_group`](Self::end_undo_group),
+///    a successful `undo` or `redo`,
+///    [`begin_undo_group`](Self::begin_undo_group), a grouping change and
+///    an other edit each end it.
+/// 2. There was no move since the group's last edit. A move is a call to
+///    [`set_selections`](Self::set_selections),
+///    [`move_cursors`](Self::move_cursors),
+///    [`extend_selections`](Self::extend_selections),
+///    [`select_all`](Self::select_all),
+///    [`collapse_selections`](Self::collapse_selections),
+///    [`add_cursor_above`](Self::add_cursor_above),
+///    [`add_cursor_below`](Self::add_cursor_below),
+///    [`add_next_match`](Self::add_next_match) or
+///    [`select_all_matches`](Self::select_all_matches) that changes the
+///    selections, so a move and a move back are still a move. Any other
+///    change to the selections, such as a Vim motion, is a move when the
+///    selections differ from those just after the group's last edit.
+///    Clamping at the start of an edit isn't a move.
+/// 3. The edit's kind is the group's last edit's kind.
+/// 4. The edit isn't a [`newline`](Self::newline). A newline always starts
+///    a group, and typing after it joins that group.
+/// 5. The edit deletes no line break: no range it deletes, at any cursor,
+///    starts and ends on different lines, as
+///    [`TextBuffer::byte_to_line`](helm_text::TextBuffer::byte_to_line)
+///    counts them, so a LF, a CR or a CRLF. A delete that does starts a
+///    group, and later deletes of the same kind join it.
+/// 6. The time [`set_time`](Self::set_time) last gave is less than
+///    [`TYPING_PAUSE`](Self::TYPING_PAUSE) after the time of the group's
+///    last edit. A time earlier than that one is no pause.
+///
+/// An other edit ends any open typing group, applies its own transaction
+/// and leaves no group open. A command with nothing to do, or one that
+/// errors, changes nothing: not the group, its last kind or its last time.
+/// An explicit group wins: while one is open, every edit folds into it
+/// whatever its kind, the moves or the time.
+///
+/// A paste is one step: call `end_undo_group`, then `insert` with the
+/// pasted text, then `end_undo_group`.
 #[derive(Debug)]
 pub struct Editor {
     /// This editor's own identity (T-109), so a session can tell two views
@@ -199,6 +265,10 @@ impl Clone for Editor {
     /// typing keeps the open undo group but not the record. Its Escape
     /// doesn't repeat a counted insert, and `.` still repeats the last
     /// change the session finished.
+    ///
+    /// The copy also keeps the grouping, the time, and an open typing
+    /// group with its last kind, its last time and whether a move followed
+    /// its last edit (T-112).
     fn clone(&self) -> Self {
         Self {
             id: EditorId::next(),
@@ -211,6 +281,26 @@ impl Clone for Editor {
             group: self.group,
         }
     }
+}
+
+/// Who opens and closes an [`Editor`]'s undo groups (T-112). The type
+/// docs of [`Editor`] hold the rules.
+///
+/// A [`Keymap`](crate::Keymap) carries one, and
+/// [`Dispatcher::dispatch`](crate::Dispatcher::dispatch) gives it to the
+/// editor before each command it runs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UndoGrouping {
+    /// Groups open and close only through
+    /// [`Editor::begin_undo_group`] and [`Editor::end_undo_group`], and
+    /// every edit outside one is its own undo step, as in T-108. Vim's
+    /// keymap uses this.
+    #[default]
+    Explicit,
+    /// VS Code's policy: the editor opens and closes groups itself around
+    /// runs of typing and deleting, as the "Typing groups" section of
+    /// [`Editor`] says. VS Code's keymap uses this.
+    Typing,
 }
 
 /// The selections just before and just after one transaction.
@@ -578,15 +668,50 @@ impl Editor {
         self.group = Some(None);
     }
 
-    /// Closes the open undo group (T-108). Returns whether one was open.
-    /// The next edit is a new undo step.
+    /// Closes the open undo group (T-108), explicit or typing (T-112).
+    /// Returns whether one was open. The next edit is a new undo step.
     pub fn end_undo_group(&mut self) -> bool {
         self.group.take().is_some()
     }
 
-    /// Whether an undo group is open (T-108).
+    /// Whether an undo group is open (T-108): an explicit one, or a typing
+    /// one under [`UndoGrouping::Typing`] (T-112).
     pub fn in_undo_group(&self) -> bool {
         self.group.is_some()
+    }
+
+    /// How long a pause between two edits must be to start a new typing
+    /// group (T-112): one second. See the type docs' "Typing groups".
+    pub const TYPING_PAUSE: Duration = Duration::from_secs(1);
+
+    /// Sets who opens and closes this editor's undo groups (T-112). A
+    /// different value from the current one ends any open group, explicit
+    /// or typing. The same value changes nothing. A new editor has
+    /// [`UndoGrouping::Explicit`].
+    #[expect(
+        unused_variables,
+        reason = "T-112 interface stub; the implementation deletes this"
+    )]
+    pub fn set_undo_grouping(&mut self, grouping: UndoGrouping) {
+        todo!()
+    }
+
+    /// Who opens and closes this editor's undo groups (T-112).
+    pub fn undo_grouping(&self) -> UndoGrouping {
+        todo!()
+    }
+
+    /// The time of the edits that follow (T-112), measured from any fixed
+    /// origin. `helm-ui` passes each key event's time before dispatching
+    /// it. The editor never reads a clock: it compares this with the time
+    /// of a typing group's last edit, under [`UndoGrouping::Typing`] only.
+    /// Until the first call, every edit happens at time zero.
+    #[expect(
+        unused_variables,
+        reason = "T-112 interface stub; the implementation deletes this"
+    )]
+    pub fn set_time(&mut self, now: Duration) {
+        todo!()
     }
 }
 

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::{CommandId, KeyParseError, KeySequence, Keystroke};
+use crate::{CommandId, KeyParseError, KeySequence, Keystroke, UndoGrouping};
 
 /// A mode's id, such as `"normal"` or `"insert"`. Unique within a keymap.
 ///
@@ -302,6 +302,24 @@ impl Keymap {
             .push(self.bindings.len());
         self.bindings.push(binding);
         Ok(())
+    }
+
+    /// This keymap with `grouping` as its undo grouping (T-112): the
+    /// [`UndoGrouping`] [`Dispatcher::dispatch`](crate::Dispatcher::dispatch)
+    /// gives each editor before running a command. [`Keymap::new`] gives
+    /// [`UndoGrouping::Explicit`].
+    #[expect(
+        unused_variables,
+        unused_mut,
+        reason = "T-112 interface stub; the implementation deletes this"
+    )]
+    pub fn with_undo_grouping(mut self, grouping: UndoGrouping) -> Self {
+        todo!()
+    }
+
+    /// This keymap's undo grouping (T-112).
+    pub fn undo_grouping(&self) -> UndoGrouping {
+        todo!()
     }
 
     /// Whether any mode's typing is [`Typing::Count`].

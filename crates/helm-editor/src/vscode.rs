@@ -43,6 +43,11 @@ pub const MODE: &str = "default";
 /// That is 39 bindings. None of them is a chord, and none uses a char
 /// that Shift makes, so the notation's folding of Shift into chars changes
 /// nothing here.
+///
+/// The keymap's undo grouping is
+/// [`UndoGrouping::Typing`](crate::UndoGrouping::Typing) (T-112), so typing
+/// undoes in runs, as the "Typing groups" section of
+/// [`Editor`](crate::Editor) says.
 pub fn keymap() -> Keymap {
     const BINDINGS: [(&str, &str); 39] = [
         ("enter", editor::NEWLINE),
