@@ -102,6 +102,6 @@ The doc comment of `crates/helm-bench/benches/vim_objects.rs` still says this be
 
 ## Out of scope
 
-- Vim's forward search for a pair when none encloses the cursor. That is a question for Khakha.
+- Vim's forward search for a pair when none encloses the cursor. Khakha asked for a follow-up task to follow it within the 1 MiB cap, and for this task to keep it as a listed difference.
 - Feedback for a refused put, a later `helm-ui` task (answer 4).
 - Visual ends on a line break, kept since T-108.
