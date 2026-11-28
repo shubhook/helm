@@ -163,7 +163,10 @@ pub struct Editor {
 /// editor that made it, not to its buffer, since two editors can show one
 /// buffer.
 ///
-/// The editor owns the only strong reference. A [`Session`](crate::Session)
+/// The editor owns the only lasting strong reference:
+/// [`CommandRegistry::run_in`](crate::CommandRegistry::run_in) holds a clone
+/// while a command runs and drops it before it returns. A
+/// [`Session`](crate::Session)
 /// keeps a [`Weak`] one with each open record, so it can tell which editor
 /// a record belongs to and, once that editor is dropped, that nobody will
 /// finish the record. The allocation outlives the editor while any weak

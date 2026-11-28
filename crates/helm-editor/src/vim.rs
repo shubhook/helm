@@ -371,6 +371,26 @@
 //!
 //! Visual-mode `d` and `c` weren't part of that run.
 //!
+//! T-114 measured bracket objects from longer visual selections, escaped
+//! quotes and the bracket scan's cap in the same Vim, and found these
+//! differences. The first is Khakha's choice; the others follow the rules
+//! above:
+//!
+//! - The bracket scan stops 1 MiB from where it starts and finds no pair
+//!   (Khakha's answer on PR #42). Vim reads the whole text, so `di(` with a
+//!   bracket 2 MiB away deletes in Vim and does nothing here.
+//! - With no pair around the cursor, Vim looks for the next pair after
+//!   it, even on a later line, and here a bracket object finds nothing.
+//!   `di(` from `b` in `a b (c) d` leaves `a b () d` in Vim and changes
+//!   nothing here. In a visual mode Vim does the same when no pair is out
+//!   from the selection's start, and can select a pair inside the
+//!   selection: `va(a(a(` from `c` in `f(a(bc)d)e` leaves `(bc)` selected
+//!   in Vim, and `(a(bc)d)` stays selected here.
+//! - With no unescaped quote before the cursor, Vim takes the line's first
+//!   quote as the opening one even if it is escaped. `di"` from `a` in
+//!   `x\"a"b"` leaves `x\""b"` in Vim. Here the escaped quote doesn't
+//!   count, so the pair is `"b"` and it leaves `x\"a""`.
+//!
 //! # Visual-mode commands
 //!
 //! | Id | Keys | What it does |
@@ -430,10 +450,15 @@
 //! lines between, so `di{` on a block of lines leaves `{` and `}` on their
 //! own lines and `ci{` leaves one empty line to type in. When both are left
 //! out and one empty line is between them, `i` is that line. Any other
-//! empty `i` finds nothing. All measured in Vim 9.1.
+//! empty `i` finds nothing. All measured in Vim 9.1. The scan reads at most
+//! 1 MiB each way from where it starts (T-114): a pair counts only if both
+//! its brackets are in the 1 MiB before that point or the 1 MiB from it on,
+//! and a scan that reaches either end without its bracket finds no pair.
 //!
-//! **Quotes.** Only within the cursor's line. A quote right after a
-//! backslash doesn't count. On a quote, its index among the line's quotes
+//! **Quotes.** Only within the cursor's line. A quote right after an odd
+//! number of backslashes doesn't count; after an even number, the
+//! backslashes escape each other and the quote counts (T-114, as Vim 9.1
+//! does). On a quote, its index among the line's quotes
 //! says whether it opens or closes. Elsewhere, the quotes are the nearest
 //! one before the cursor and the nearest one after; with none before, the
 //! first pair after the cursor. `a` covers the quotes and the white space
@@ -457,11 +482,18 @@
 //!
 //! **In a visual mode** an object from a one-char selection replaces it,
 //! and from a longer one grows it from the visual cursor: `viwiw` adds the
-//! next run. `ip` and `ap` switch to visual-line mode and the rest to
-//! visual mode, by the binding's `then_mode`, even when the object finds
-//! nothing; then the selection doesn't change. A visual end is never the
-//! line break of a line with text (T-108), so an object range that ends
-//! right after such a break selects up to the char before it.
+//! next run. A bracket object from a longer selection follows Vim 9.1
+//! instead (T-114). Its scan starts before the selection's first char, so
+//! a bracket there isn't that pair's, and it gives the `n`th pair out:
+//! `a` selects that pair, and `i` its inside, moving out one pair at a
+//! time while the inside lies within the selection and is more than one
+//! char. So `va(a(` and `vi(i(` grow to the next pair out. The selection
+//! then runs forward, from the pair's first char to its last. `ip` and
+//! `ap` switch to visual-line mode and the rest to visual mode, by the
+//! binding's `then_mode`, even when the object finds nothing; then the
+//! selection doesn't change. A visual end is never the line break of a
+//! line with text (T-108), so an object range that ends right after such
+//! a break selects up to the char before it.
 //!
 //! # Registers (T-109)
 //!

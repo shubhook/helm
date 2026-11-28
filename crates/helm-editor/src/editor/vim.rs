@@ -883,7 +883,10 @@ impl Editor {
                 } else {
                     // Below a last line with no line break: the break moves
                     // to the front.
-                    // The text's own bytes are moved in place, not copied.
+                    // The text stays in its own allocation: `split_off`
+                    // copies only the line break, 1 or 2 bytes, into a
+                    // small string, and `insert_str` shifts the rest of the
+                    // text along to put the break in front.
                     let mut text = text;
                     let body = split_break(&text).0.len();
                     let end: String = text.split_off(body);
@@ -1004,6 +1007,9 @@ impl Editor {
                     o::span(buffer, &mut reads, cursor, object, count)
                         .filter(|span| !matches!(span, Span::Chars(r) if r.is_empty()))
                         .map(|span| o::visual_ends(buffer, &mut reads, &span))
+                } else if matches!(object.kind, o::Kind::Pair { .. }) {
+                    let ends = (anchor.min(cursor), anchor.max(cursor));
+                    o::grow_pair(buffer, &mut reads, ends, object, count)
                 } else if matches!(object.kind, o::Kind::Word { .. }) && cursor > anchor {
                     let from = o::after(buffer, &mut reads, cursor);
                     o::word_from(buffer, &mut reads, from, object, count).map(|span| {

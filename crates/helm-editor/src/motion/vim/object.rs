@@ -4,9 +4,9 @@
 //!
 //! Word objects read a window at a time from the cursor and stop at the
 //! line's ends. Quote objects read the cursor's line from its start.
-//! Bracket objects read outward from the cursor and use the line index
-//! only for the block rule at the end. Paragraph objects use a fixed
-//! number of line-index lookups per line they cross.
+//! Bracket objects read outward from the cursor, at most 1 MiB each way,
+//! and use the line index only for the block rule at the end. Paragraph
+//! objects use a fixed number of line-index lookups per line they cross.
 
 use std::cell::Cell;
 
@@ -17,7 +17,7 @@ use super::{
     vsettle,
 };
 use crate::editor::is_word;
-use crate::motion::{Backward, Forward, Reads, is_blank, is_break, left, right};
+use crate::motion::{Backward, Forward, Reads, WINDOW, is_blank, is_break, left, right};
 use crate::vim_commands as ids;
 
 /// What an object's range is made of.
@@ -298,23 +298,41 @@ fn word(
     Some(Span::Chars(back.offset()..end))
 }
 
-/// A bracket object from `p` with count `n`: the `n`th pair of `open` and
-/// `close` out from the cursor.
-fn pair(
+/// How far a bracket object reads from where its scan starts, each way
+/// (T-114): 1 MiB. A pair with a bracket further away counts as no pair.
+const PAIR_SCAN: usize = 1 << 20;
+
+/// The text a bracket scan from `p` may read: from `p - PAIR_SCAN` up to,
+/// not including, `p + PAIR_SCAN`.
+fn scan_window(p: usize) -> (usize, usize) {
+    (p.saturating_sub(PAIR_SCAN), p.saturating_add(PAIR_SCAN))
+}
+
+/// The `n`th pair of `open` and `close` out from `p`, as the offsets of its
+/// two brackets, with both inside `window`. With `on`, an opening bracket
+/// at `p` is the first pair's, as for a cursor on it. Without, the scan
+/// starts before `p` and the char at `p` doesn't count, as for the start of
+/// a visual selection.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one part of the scan"
+)]
+fn find_pair(
     buffer: &Buffer,
     reads: &mut Reads,
     p: usize,
     n: usize,
-    inner: bool,
     open: char,
     close: char,
-) -> Option<Span> {
+    on: bool,
+    (floor, ceiling): (usize, usize),
+) -> Option<(usize, usize)> {
     // The opening bracket: the one at `p`, or the `n`th unmatched one
     // before it.
-    let mut found = usize::from(char_at(buffer, reads, p) == Some(open));
+    let mut found = usize::from(on && char_at(buffer, reads, p) == Some(open));
     let mut o = p;
     if found < n {
-        let mut back = Backward::new(buffer, &mut reads.backward, p);
+        let mut back = Backward::floored(buffer, &mut reads.backward, p, floor);
         let depth = Cell::new(0usize);
         let keep = |c: char| {
             if c == close {
@@ -337,7 +355,8 @@ fn pair(
     }
     // Its closing bracket.
     let after = o + open.len_utf8();
-    let mut ahead = Forward::new(buffer, &mut reads.forward, after);
+    let budget = ceiling.saturating_sub(after);
+    let mut ahead = Forward::bounded(buffer, &mut reads.forward, after, WINDOW, budget);
     let depth = Cell::new(0usize);
     ahead.skip_while(|c| {
         if c == open {
@@ -352,11 +371,35 @@ fn pair(
     });
     ahead.peek()?;
     let c = ahead.offset();
-    drop(ahead);
-    if !inner {
-        return Some(Span::Chars(o..c + close.len_utf8()));
-    }
+    // A reader reads at least 4 bytes per window, so it can read a few
+    // bytes past its limit, and a window ends on a char boundary. So check
+    // both brackets against the window here. Any pair further out is also
+    // outside it, so this never drops a pair inside the window.
+    (o >= floor && c < ceiling).then_some((o, c))
+}
 
+/// A bracket object from `p` with count `n`: the `n`th pair of `open` and
+/// `close` out from the cursor.
+fn pair(
+    buffer: &Buffer,
+    reads: &mut Reads,
+    p: usize,
+    n: usize,
+    inner: bool,
+    open: char,
+    close: char,
+) -> Option<Span> {
+    let (o, c) = find_pair(buffer, reads, p, n, open, close, true, scan_window(p))?;
+    if inner {
+        inside(buffer, reads, o + open.len_utf8(), c)
+    } else {
+        Some(Span::Chars(o..c + close.len_utf8()))
+    }
+}
+
+/// What `i` covers of the pair whose opening bracket ends at `after` and
+/// whose closing bracket starts at `c`, or `None` if that is empty.
+fn inside(buffer: &Buffer, reads: &mut Reads, after: usize, c: usize) -> Option<Span> {
     // A line break right after the opening bracket is left out.
     let mut start = after;
     let opens_a_line = char_at(buffer, reads, start).is_some_and(is_break);
@@ -381,6 +424,41 @@ fn pair(
         return None;
     }
     Some(Span::Chars(start..end))
+}
+
+/// A bracket object from a visual selection longer than one char, whose
+/// first char is at `lo` and last at `hi`, as Vim 9.1 does it (T-114). The
+/// pair is the `n`th out from before `lo`, so an opening bracket at `lo`
+/// isn't that pair's: `va(a(` grows to the next pair out. `a` selects that
+/// pair. `i` selects its inside, and while that inside lies within the
+/// selection and is more than one char, it moves out one pair, so `vi(i(`
+/// grows too. Gives the new selection's first and last chars, in that
+/// order, or `None` if there is no such pair.
+pub(crate) fn grow_pair(
+    buffer: &Buffer,
+    reads: &mut Reads,
+    (lo, hi): (usize, usize),
+    object: VimObject,
+    count: Option<usize>,
+) -> Option<(usize, usize)> {
+    let Kind::Pair { open, close } = object.kind else {
+        return None;
+    };
+    let window = scan_window(lo);
+    let n = count.unwrap_or(1).max(1);
+    let (mut o, mut c) = find_pair(buffer, reads, lo, n, open, close, false, window)?;
+    loop {
+        if !object.inner {
+            let span = Span::Chars(o..c + close.len_utf8());
+            return Some(visual_ends(buffer, reads, &span));
+        }
+        let span = inside(buffer, reads, o + open.len_utf8(), c)?;
+        let (first, last) = visual_ends(buffer, reads, &span);
+        if first < lo || last > hi || first == last {
+            return Some((first, last));
+        }
+        (o, c) = find_pair(buffer, reads, o, 1, open, close, false, window)?;
+    }
 }
 
 /// A quote object from `p` with count `n`, within `p`'s line.
@@ -432,7 +510,9 @@ fn quote(
             }
             count += 1;
         }
-        escaped = c == '\\';
+        // A backslash escapes the char after it, another backslash too, so
+        // a quote is escaped after an odd number of them (T-114).
+        escaped = c == '\\' && !escaped;
         reader.advance();
     }
     drop(reader);

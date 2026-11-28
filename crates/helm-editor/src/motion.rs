@@ -483,6 +483,15 @@ impl<'a> Backward<'a> {
         Self::bounded(buffer, slot, offset, WINDOW, usize::MAX)
     }
 
+    /// A reader that reads nothing before `floor` (T-114): it stops there as
+    /// at the limit of a budget, but keeps only its latest window, as one
+    /// made with [`Backward::new`] does.
+    fn floored(buffer: &'a Buffer, slot: &'a mut Window, offset: usize, floor: usize) -> Self {
+        let mut reader = Self::new(buffer, slot, offset);
+        reader.limit = floor.min(offset);
+        reader
+    }
+
     fn bounded(
         buffer: &'a Buffer,
         slot: &'a mut Window,

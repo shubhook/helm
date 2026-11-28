@@ -8,7 +8,7 @@
 //!
 //! `di_paren_no_pair_10mb` measures the worst case behind open question 6
 //! of `tasks/109-vim-objects.md`: a bracket object with no enclosing pair
-//! scans the text before the cursor to its start.
+//! scans 1 MiB of the text before the cursor, the cap T-114 set.
 
 use std::hint::black_box;
 
