@@ -84,6 +84,12 @@
 //! and [`CommandRegistry::with_vim_commands`] holds every command both
 //! keymaps bind.
 //!
+//! VS Code's keymap groups typing differently (T-112): its
+//! [`UndoGrouping::Typing`] lets the editor open and close groups itself,
+//! at pauses, moves, newlines and switches between typing and deleting.
+//! Each [`Keymap`] carries its grouping, and the dispatcher hands it to the
+//! editor. [`Editor`]'s "Typing groups" section holds the rules.
+//!
 //! # Registers, `.` and requests (T-109)
 //!
 //! A [`Session`] holds what every editor shares: Vim's registers and the
@@ -113,7 +119,7 @@ pub use command::{
     Invocation, RegisterError,
 };
 pub use dispatch::{Dispatcher, KeyState, Resolution};
-pub use editor::Editor;
+pub use editor::{Editor, UndoGrouping};
 pub use error::EditorError;
 pub use key::{Key, KeyEvent, KeyParseError, KeySequence, Keystroke, Modifiers};
 pub use keymap::{Action, Binding, Keymap, KeymapError, Mode, ModeId, Typing};

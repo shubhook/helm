@@ -475,6 +475,13 @@ impl Dispatcher {
     /// The command runs with a fresh [`Session`], so registers, `.` and
     /// the requests a command makes don't outlive the call (T-109).
     /// `helm-ui` uses [`dispatch_in`](Self::dispatch_in).
+    ///
+    /// Before running the command, it gives the editor the active keymap's
+    /// [`Keymap::undo_grouping`] with
+    /// [`Editor::set_undo_grouping`](crate::Editor::set_undo_grouping)
+    /// (T-112). So a switch between keymaps with different groupings ends
+    /// any open group at the first command the new keymap runs. A
+    /// resolution that runs nothing leaves the grouping alone.
     pub fn dispatch(
         &self,
         state: &mut KeyState,
@@ -500,6 +507,11 @@ impl Dispatcher {
     /// This is the dispatch `helm-ui` uses. [`dispatch`](Self::dispatch) is
     /// this with a fresh [`Session`] that is dropped afterwards, along with
     /// the requests.
+    ///
+    /// It gives the editor the keymap's undo grouping before
+    /// [`CommandRegistry::run_in`] starts, as `dispatch` does (T-112), so
+    /// `run_in` sees a group the switch ended as closed and ends Vim's `.`
+    /// record with it.
     pub fn dispatch_in(
         &self,
         state: &mut KeyState,
