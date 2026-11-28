@@ -42,7 +42,6 @@ fn requests(rows: &[(&str, Vec<Request>)]) {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn w_q_and_e_make_requests() {
     requests(&[
         ("w", vec![save(None, false)]),
@@ -67,7 +66,6 @@ fn w_q_and_e_make_requests() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn leading_colons_and_white_space_are_skipped() {
     requests(&[
         ("  w", vec![save(None, false)]),
@@ -80,7 +78,6 @@ fn leading_colons_and_white_space_are_skipped() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn lines_helm_doesnt_run_are_errors() {
     for (line, error) in [
         ("foo", vim::ExError::NotACommand),
@@ -111,7 +108,6 @@ fn lines_helm_doesnt_run_are_errors() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_line_is_typed_into_the_key_state() {
     let mut v = Vim::new("a|b");
     assert_eq!(v.state.line(), None);
@@ -129,7 +125,6 @@ fn the_line_is_typed_into_the_key_state() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn escape_and_backspace_leave_the_command_line() {
     let mut v = Vim::new("a|b");
     v.keys(":wq<esc>");
@@ -152,7 +147,6 @@ fn escape_and_backspace_leave_the_command_line() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_count_before_the_colon_is_dropped() {
     let mut v = Vim::new("a|b");
     v.keys("3:");
@@ -162,7 +156,6 @@ fn a_count_before_the_colon_is_dropped() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn commands_on_the_line_are_not_changes() {
     let mut v = Vim::new("|abc");
     v.keys("x:w<cr>.");
@@ -170,7 +163,6 @@ fn commands_on_the_line_are_not_changes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_keymap_switch_or_cancel_leaves_the_command_line() {
     // As with a pending operator, the state goes back to the mode the line
     // was entered from, and the line is dropped.

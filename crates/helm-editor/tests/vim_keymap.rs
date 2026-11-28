@@ -143,6 +143,128 @@ fn documented() -> Vec<Row> {
     rows
 }
 
+/// The object keys after `i` or `a` (T-109), with the object's name in its
+/// ids, and whether it is a paragraph.
+const OBJECT_KEYS: [(&str, &str, bool); 16] = [
+    ("w", "word", false),
+    ("W", "big_word", false),
+    ("(", "paren", false),
+    (")", "paren", false),
+    ("b", "paren", false),
+    ("[", "bracket", false),
+    ("]", "bracket", false),
+    ("{", "brace", false),
+    ("}", "brace", false),
+    ("B", "brace", false),
+    ("<", "angle", false),
+    (">", "angle", false),
+    ("\"", "double_quote", false),
+    ("'", "single_quote", false),
+    ("`", "backtick", false),
+    ("p", "paragraph", true),
+];
+
+/// The 52 ids T-109 adds (Khakha's grant on question 2 of
+/// `tasks/109-vim-objects.md`).
+fn t109_ids() -> Vec<String> {
+    let mut ids: Vec<String> = [
+        "vim.yank",
+        "vim.yank_line",
+        "vim.put_after",
+        "vim.put_before",
+        "vim.yank_selection",
+        "vim.yank_lines",
+        "vim.put_selection",
+        "vim.put_selection_keep",
+        "vim.put_lines",
+        "vim.put_lines_keep",
+        "vim.repeat",
+        "vim.ex",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let mut names: Vec<&str> = OBJECT_KEYS.iter().map(|&(_, name, _)| name).collect();
+    names.dedup();
+    for name in names {
+        ids.push(format!("vim.inner_{name}"));
+        ids.push(format!("vim.a_{name}"));
+        ids.push(format!("vim.select_inner_{name}"));
+        ids.push(format!("vim.select_a_{name}"));
+    }
+    ids
+}
+
+/// Every binding T-109's `vim.rs` lists after T-108's 115 (Khakha's grant
+/// on question 2 of `tasks/109-vim-objects.md`).
+fn t109_documented() -> Vec<Row> {
+    let mut rows = vec![
+        row(
+            "y",
+            "normal",
+            Some(Action::Operator("vim.yank".into())),
+            Some("yank_pending"),
+        ),
+        row("Y", "normal", runs("vim.yank_line"), None),
+        row("p", "normal", runs("vim.put_after"), None),
+        row("P", "normal", runs("vim.put_before"), None),
+        row(".", "normal", runs("vim.repeat"), None),
+        row(":", "normal", None, Some("command_line")),
+        row("enter", "command_line", runs("vim.ex"), Some("normal")),
+        row("escape", "command_line", None, Some("normal")),
+        row("y", "visual", runs("vim.yank_selection"), Some("normal")),
+        row("p", "visual", runs("vim.put_selection"), Some("normal")),
+        row(
+            "P",
+            "visual",
+            runs("vim.put_selection_keep"),
+            Some("normal"),
+        ),
+        row("y", "visual_line", runs("vim.yank_lines"), Some("normal")),
+        row("p", "visual_line", runs("vim.put_lines"), Some("normal")),
+        row(
+            "P",
+            "visual_line",
+            runs("vim.put_lines_keep"),
+            Some("normal"),
+        ),
+        row("y", "yank_pending", runs("vim.line"), None),
+    ];
+    for (keys, motion, _) in MOTIONS {
+        rows.push(row(keys, "yank_pending", runs(motion), None));
+    }
+    let mut names: Vec<char> = ('a'..='z').chain('A'..='Z').chain('0'..='9').collect();
+    names.extend(['"', '-', '_', '+', '*']);
+    for mode in ["normal", "visual", "visual_line"] {
+        for &name in &names {
+            let keys = format!("\" {name}");
+            rows.push(Row {
+                keys: KeySequence::parse(&keys).expect("valid keys").to_string(),
+                mode: mode.to_owned(),
+                action: Some(Action::Register(name)),
+                then_mode: None,
+            });
+        }
+    }
+    for (key, name, paragraph) in OBJECT_KEYS {
+        for (prefix, kind) in [("i", "inner"), ("a", "a")] {
+            let keys = format!("{prefix} {key}");
+            let id = format!("vim.{kind}_{name}");
+            let select = format!("vim.select_{kind}_{name}");
+            let (in_visual, in_visual_line) = if paragraph {
+                (Some("visual_line"), None)
+            } else {
+                (None, Some("visual"))
+            };
+            rows.push(row(&keys, "delete_pending", runs(&id), None));
+            rows.push(row(&keys, "change_pending", runs(&id), Some("insert")));
+            rows.push(row(&keys, "yank_pending", runs(&id), None));
+            rows.push(row(&keys, "visual", runs(&select), in_visual));
+            rows.push(row(&keys, "visual_line", runs(&select), in_visual_line));
+        }
+    }
+    rows
+}
+
 fn as_row(binding: &Binding) -> Row {
     assert_eq!(binding.context, None, "{binding:?}");
     Row {
@@ -191,8 +313,10 @@ fn vim_command_ids_are_the_documented_ones() {
             "vim.redo",
         ])
         .collect();
+    let t109 = t109_ids();
+    expected.extend(t109.iter().map(String::as_str));
     expected.sort_unstable();
-    assert_eq!(vim_commands::ALL.len(), 55);
+    assert_eq!(vim_commands::ALL.len(), 107);
     assert_eq!(vim_commands::ALL.to_vec(), expected);
     assert!(vim_commands::ALL.is_sorted());
 }
@@ -209,7 +333,7 @@ fn with_vim_commands_holds_every_command() {
         .collect();
     expected.sort_unstable();
     assert_eq!(ids, expected);
-    assert_eq!(ids.len(), 91);
+    assert_eq!(ids.len(), 143);
     for command in registry.commands() {
         assert!(!command.title.is_empty(), "{}", command.id);
     }
@@ -235,6 +359,8 @@ fn the_keymap_has_vims_modes() {
             Mode::new("visual_line", Typing::Count),
             Mode::new("delete_pending", Typing::Count),
             Mode::new("change_pending", Typing::Count),
+            Mode::new("yank_pending", Typing::Count),
+            Mode::new("command_line", Typing::Line),
         ]
     );
     assert_eq!(keymap.initial_mode(), &ModeId::from("normal"));
@@ -245,7 +371,9 @@ fn the_keymap_has_vims_modes() {
             vim::VISUAL,
             vim::VISUAL_LINE,
             vim::DELETE_PENDING,
-            vim::CHANGE_PENDING
+            vim::CHANGE_PENDING,
+            vim::YANK_PENDING,
+            vim::COMMAND_LINE
         ],
         [
             "normal",
@@ -253,7 +381,9 @@ fn the_keymap_has_vims_modes() {
             "visual",
             "visual_line",
             "delete_pending",
-            "change_pending"
+            "change_pending",
+            "yank_pending",
+            "command_line"
         ]
     );
 }
@@ -264,6 +394,9 @@ fn the_keymap_has_exactly_the_documented_bindings() {
     let mut actual: Vec<Row> = keymap.bindings().iter().map(as_row).collect();
     let mut expected = documented();
     assert_eq!(expected.len(), 115);
+    let t109 = t109_documented();
+    assert_eq!(t109.len(), 391);
+    expected.extend(t109);
     let key = |r: &Row| (r.mode.clone(), r.keys.clone());
     actual.sort_by_key(key);
     expected.sort_by_key(key);

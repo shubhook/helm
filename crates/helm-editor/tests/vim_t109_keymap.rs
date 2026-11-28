@@ -277,7 +277,6 @@ fn the_new_ids_are_the_documented_ones() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_registry_holds_every_new_command() {
     let registry = registry();
     for (id, _) in new_ids() {
@@ -291,7 +290,6 @@ fn the_registry_holds_every_new_command() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn changes_are_marked() {
     let registry = registry();
     for id in [
@@ -335,7 +333,6 @@ fn changes_are_marked() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_keymap_has_the_two_new_modes() {
     let keymap = keymap();
     let modes: Vec<(&str, Typing)> = keymap
@@ -362,7 +359,6 @@ fn the_keymap_has_the_two_new_modes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_keymap_adds_exactly_the_documented_bindings() {
     let keymap = keymap();
     let mut expected = documented();
@@ -385,7 +381,6 @@ fn char_event(c: char) -> KeyEvent {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn each_object_resolves_in_each_of_its_modes() {
     let d = helm_editor::Dispatcher::new(registry(), keymap());
     for (key, [inner, a, select_inner, select_a], paragraph) in objects() {
@@ -426,7 +421,6 @@ fn each_object_resolves_in_each_of_its_modes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn register_chords_hold_a_register_in_each_of_their_modes() {
     let d = helm_editor::Dispatcher::new(registry(), keymap());
     for enter in [None, Some('v'), Some('V')] {
@@ -467,7 +461,6 @@ fn register_chords_hold_a_register_in_each_of_their_modes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_broken_object_chord_cancels_the_operator() {
     let d = helm_editor::Dispatcher::new(registry(), keymap());
     let mut state = d.key_state();

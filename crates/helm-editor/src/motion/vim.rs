@@ -22,6 +22,8 @@ use super::{
 use crate::editor::is_word;
 use crate::vim_commands as ids;
 
+pub(crate) mod object;
+
 /// One of Vim's sixteen motions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VimMotion {
@@ -313,6 +315,11 @@ pub(crate) fn after_char(buffer: &Buffer, reads: &mut Reads, p: usize) -> usize 
 /// The first non-blank of `p`'s line, Vim's `I`.
 pub(crate) fn line_first_non_blank(buffer: &Buffer, reads: &mut Reads, p: usize) -> usize {
     first_non_blank(buffer, reads, line_of(buffer, p))
+}
+
+/// Where line `line` starts, for callers outside this module.
+pub(crate) fn line_start_of_line(buffer: &Buffer, line: usize) -> usize {
+    line_start(buffer, line)
 }
 
 /// Where `p`'s line starts, `O`'s insert point.
@@ -727,6 +734,74 @@ pub(crate) fn delete_lines(buffer: &Buffer, reads: &mut Reads, a: usize, b: usiz
     } else {
         0..buffer.len_bytes()
     }
+}
+
+/// The text in `range`, copied chunk by chunk with [`TextBuffer::chunk_at`]
+/// into a string of exactly that size (T-109). `range` is a valid range of
+/// char boundaries, as every range an operator acts on is. A range that
+/// isn't falls back to [`TextBuffer::slice`], which checks it.
+pub(crate) fn copy(buffer: &Buffer, range: Range<usize>) -> String {
+    let mut text = String::with_capacity(range.len());
+    let mut at = range.start;
+    while at < range.end {
+        let Ok((chunk, start)) = buffer.chunk_at(at) else {
+            break;
+        };
+        let to = (range.end - start).min(chunk.len());
+        let Some(piece) = chunk.get(at - start..to).filter(|piece| !piece.is_empty()) else {
+            break;
+        };
+        text.push_str(piece);
+        at += piece.len();
+    }
+    if at == range.end {
+        text
+    } else {
+        buffer.slice(range).unwrap_or_default()
+    }
+}
+
+/// The text of lines `a` to `b`, as a linewise register piece holds it:
+/// ending with a line break, `newline` if the last line had none.
+pub(crate) fn lines_text(buffer: &Buffer, a: usize, b: usize, newline: &str) -> String {
+    let end = if b < last_line(buffer) {
+        line_start(buffer, b + 1)
+    } else {
+        buffer.len_bytes()
+    };
+    let mut text = copy(buffer, line_start(buffer, a)..end);
+    if !text.ends_with(['\n', '\r']) {
+        text.push_str(newline);
+    }
+    text
+}
+
+/// Line `line`'s line break: `"\n"`, `"\r\n"` or `"\r"`, or empty on the
+/// last line. Reads at most two bytes.
+pub(crate) fn line_break(buffer: &Buffer, reads: &mut Reads, line: usize) -> String {
+    if line >= last_line(buffer) {
+        return String::new();
+    }
+    copy(
+        buffer,
+        line_text_end(buffer, reads, line)..line_start(buffer, line + 1),
+    )
+}
+
+/// The bytes lines `a` to `b` cover, their last line break included.
+pub(crate) fn lines_range(buffer: &Buffer, a: usize, b: usize) -> Range<usize> {
+    let end = if b < last_line(buffer) {
+        line_start(buffer, b + 1)
+    } else {
+        buffer.len_bytes()
+    };
+    line_start(buffer, a)..end
+}
+
+/// `p`'s column, and the offset at that column on line `line`, for a
+/// yank's cursor.
+pub(crate) fn same_column(buffer: &Buffer, reads: &mut Reads, p: usize, line: usize) -> usize {
+    at_column(buffer, reads, line, column(buffer, p))
 }
 
 /// The bytes a linewise change of lines `a` to `b` removes: from the start

@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "vim"
 harness = false
+
+[[bench]]
+name = "vim_objects"
+harness = false

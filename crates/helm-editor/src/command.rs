@@ -53,8 +53,8 @@ impl fmt::Display for CommandId {
 }
 
 /// What a command gets besides the editor: the text to type, the motion a
-/// pending operator runs over, and the count typed before it. A command
-/// ignores what it doesn't use.
+/// pending operator runs over, the count typed before it, and the register
+/// named before it. A command ignores what it doesn't use.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CommandArgs {
     /// The text [`editor_commands::INSERT`](crate::editor_commands::INSERT)
@@ -73,6 +73,11 @@ pub struct CommandArgs {
     /// operator 6. A command that takes no count ignores it. One that does
     /// reads `None` as its default, usually 1.
     pub count: Option<usize>,
+    /// The register named before the command (T-109), or `None` if none
+    /// was: `'a'` after Vim's `" a`.
+    /// [`Dispatcher::resolve`](crate::Dispatcher::resolve) says where it
+    /// comes from. Vim's `.` replays it with the rest of the arguments.
+    pub register: Option<char>,
 }
 
 /// One command to run, with its arguments.
@@ -103,8 +108,7 @@ impl Invocation {
             command: CommandId::from(editor_commands::INSERT),
             args: CommandArgs {
                 text: Some(text.into()),
-                motion: None,
-                count: None,
+                ..CommandArgs::default()
             },
         }
     }
@@ -157,11 +161,6 @@ pub struct CommandRegistry {
     /// `Arc<str>` sorts as `CommandId` does.
     commands: BTreeMap<Arc<str>, Command>,
     /// The ids marked as changes, the commands Vim's `.` repeats (T-109).
-    /// A placeholder: the implementation may reshape it.
-    #[expect(
-        dead_code,
-        reason = "T-109 interface stub; the implementation reads it"
-    )]
     changes: BTreeSet<Arc<str>>,
 }
 
@@ -200,7 +199,7 @@ impl CommandRegistry {
     /// [`with_all_commands`](Self::with_all_commands) and the Vim commands
     /// under the ids in [`vim_commands`](crate::vim_commands) (T-108):
     /// every command the [`vscode`](crate::vscode) and [`vim`](crate::vim)
-    /// keymaps bind, 91 in all. One dispatcher built with it can switch
+    /// keymaps bind, 143 in all. One dispatcher built with it can switch
     /// between the two keymaps at runtime (ED-6). This is the registry
     /// `helm-ui` builds its dispatcher with.
     pub fn with_vim_commands() -> Self {
@@ -282,10 +281,6 @@ impl CommandRegistry {
     /// then, or at once if no group was open, the record becomes the
     /// session's [last change](Session::last_change). Runs inside the
     /// replay of `.` are recorded the same way.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn run_in(
         &self,
         invocation: &Invocation,
@@ -293,28 +288,77 @@ impl CommandRegistry {
         set: &mut BufferSet,
         session: &mut Session,
     ) -> Result<Vec<Request>, CommandError> {
-        todo!()
+        let command = self.command(invocation)?;
+        // A strong reference only while this runs, to look up records.
+        let id = editor.id().clone();
+        session.end_closed_record(&id, editor.in_undo_group());
+        // Recorded before it runs, so a command can read the record it is
+        // part of, as Escape does for a counted insert.
+        let recorded = session.is_recording(&id) || self.is_change(invocation.command.as_str());
+        if recorded {
+            session.record(&id, invocation);
+        }
+        let mut requests = Vec::new();
+        let result = (command.run)(CommandContext {
+            editor,
+            set,
+            args: &invocation.args,
+            registry: self,
+            session,
+            requests: &mut requests,
+        });
+        if let Err(error) = result {
+            if recorded {
+                session.unrecord(&id);
+            }
+            return Err(error);
+        }
+        if recorded && !editor.in_undo_group() {
+            session.finish_record(&id);
+        }
+        Ok(requests)
+    }
+
+    /// Runs `invocation`'s command with `session` and `requests` and
+    /// records nothing, as a counted insert's repeats run (T-109).
+    pub(crate) fn run_unrecorded(
+        &self,
+        invocation: &Invocation,
+        editor: &mut Editor,
+        set: &mut BufferSet,
+        session: &mut Session,
+        requests: &mut Vec<Request>,
+    ) -> Result<(), CommandError> {
+        let command = self.command(invocation)?;
+        (command.run)(CommandContext {
+            editor,
+            set,
+            args: &invocation.args,
+            registry: self,
+            session,
+            requests,
+        })
+    }
+
+    /// The command `invocation` names, or the error for an unknown id.
+    fn command(&self, invocation: &Invocation) -> Result<&Command, CommandError> {
+        self.get(invocation.command.as_str())
+            .ok_or_else(|| CommandError::UnknownCommand {
+                id: invocation.command.clone(),
+            })
     }
 
     /// Marks the command with id `id` as a change (T-109): one that Vim's
     /// `.` repeats. Marking an id twice, or one that isn't registered, is
     /// allowed; an unregistered id is never run. Marks are kept apart from
     /// [`Command`], whose fields T-106's tests build by name.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn mark_change(&mut self, id: &str) {
-        todo!()
+        self.changes.insert(Arc::from(id));
     }
 
     /// Whether the command with id `id` is marked as a change (T-109).
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn is_change(&self, id: &str) -> bool {
-        todo!()
+        self.changes.contains(id)
     }
 }
 

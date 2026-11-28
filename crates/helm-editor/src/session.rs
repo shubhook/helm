@@ -3,8 +3,10 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Weak};
 
 use crate::Invocation;
+use crate::editor::EditorId;
 
 /// What a register holds: one piece of text per cursor that wrote it, in
 /// selection order, and whether the text is whole lines.
@@ -26,12 +28,12 @@ impl Register {
     /// piece already ends with a line break. This is what a paste at a
     /// different number of cursors puts at each cursor, and what goes on
     /// the clipboard.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn text(&self, newline: &str) -> String {
-        todo!()
+        if self.linewise {
+            self.pieces.concat()
+        } else {
+            self.pieces.join(newline)
+        }
     }
 }
 
@@ -107,19 +109,34 @@ pub enum Request {
 /// [`Request::SetClipboard`].
 #[derive(Clone, Debug, Default)]
 pub struct Session {
-    /// The registers by name. A placeholder: the implementation may
-    /// reshape it.
-    #[expect(
-        dead_code,
-        reason = "T-109 interface stub; the implementation reads it"
-    )]
-    registers: BTreeMap<char, Register>,
-    /// The last change `.` repeats. A placeholder.
-    #[expect(
-        dead_code,
-        reason = "T-109 interface stub; the implementation reads it"
-    )]
+    /// The registers by name: `"`, `0` to `9`, `a` to `z`, `-` and `+`.
+    /// An empty register has no entry. Registers written together, such
+    /// as `"` and `1`, share one copy of the text.
+    registers: BTreeMap<char, Arc<Register>>,
+    /// The last change `.` repeats.
     last_change: Option<Vec<Invocation>>,
+    /// The changes still being recorded, at most one per editor, each
+    /// while its editor's undo group is open.
+    recordings: Vec<Recording>,
+    /// The text of the last [`Request::SetClipboard`] this session pushed.
+    clipboard: Option<String>,
+}
+
+/// A change being recorded: a weak reference to the editor it runs on, and
+/// its invocations so far.
+#[derive(Clone, Debug)]
+struct Recording {
+    editor: Weak<()>,
+    invocations: Vec<Invocation>,
+}
+
+/// What wrote a register, which decides the registers it goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Write {
+    /// `y` and its forms.
+    Yank,
+    /// `d`, `c`, their forms and visual `p`.
+    Delete,
 }
 
 impl Session {
@@ -131,12 +148,15 @@ impl Session {
     /// What register `name` holds, or `None` if it is empty or `name`
     /// isn't a register. `'"'` gives what the unnamed register holds, `A`
     /// to `Z` read as `a` to `z`, `*` reads as `+`, and `_` is always empty.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn register(&self, name: char) -> Option<&Register> {
-        todo!()
+        self.registers
+            .get(&stored_name(name)?)
+            .map(|register| &**register)
+    }
+
+    /// [`register`](Self::register), as the session's shared copy.
+    pub(crate) fn shared(&self, name: char) -> Option<Arc<Register>> {
+        self.registers.get(&stored_name(name)?).cloned()
     }
 
     /// Tells the session the system clipboard now holds `text`, or nothing
@@ -148,17 +168,361 @@ impl Session {
     /// linewise flag it had. Otherwise `+` becomes one piece, linewise if
     /// `text` ends with a line break. `None` or an empty string empties
     /// `+`. The unnamed register doesn't change.
-    #[expect(
-        unused_variables,
-        reason = "T-109 interface stub; the implementation deletes this"
-    )]
     pub fn set_clipboard(&mut self, text: Option<String>) {
-        todo!()
+        let Some(text) = text.filter(|text| !text.is_empty()) else {
+            self.registers.remove(&'+');
+            self.clipboard = None;
+            return;
+        };
+        if self.clipboard.as_deref() == Some(text.as_str()) && self.registers.contains_key(&'+') {
+            return;
+        }
+        self.clipboard = None;
+        let linewise = text.ends_with(['\n', '\r']);
+        self.registers.insert(
+            '+',
+            Arc::new(Register {
+                pieces: vec![text],
+                linewise,
+            }),
+        );
     }
 
     /// The last change, the invocations `.` runs again, in order, or
     /// `None` before the first change.
     pub fn last_change(&self) -> Option<&[Invocation]> {
-        todo!()
+        self.last_change.as_deref()
+    }
+
+    /// Writes `register` as `write` does to register `name`, or with no
+    /// name given, as the `vim` module docs' "Registers" say. `newline` is
+    /// the editor's line break. A write to `+` or `*` pushes
+    /// [`Request::SetClipboard`] onto `requests`.
+    pub(crate) fn write(
+        &mut self,
+        name: Option<char>,
+        register: Register,
+        write: Write,
+        newline: &str,
+        requests: &mut Vec<Request>,
+    ) {
+        if register.pieces.is_empty() {
+            return;
+        }
+        let register = Arc::new(register);
+        let register = match name.filter(|&name| name != '"') {
+            None => {
+                match write {
+                    Write::Yank => {
+                        self.registers.insert('0', Arc::clone(&register));
+                    }
+                    Write::Delete
+                        if register.linewise
+                            || register.pieces.iter().any(|p| p.contains(['\n', '\r'])) =>
+                    {
+                        for n in (b'1'..b'9').rev() {
+                            if let Some(moved) = self.registers.remove(&char::from(n)) {
+                                self.registers.insert(char::from(n + 1), moved);
+                            }
+                        }
+                        self.registers.insert('1', Arc::clone(&register));
+                    }
+                    Write::Delete => {
+                        self.registers.insert('-', Arc::clone(&register));
+                    }
+                }
+                register
+            }
+            Some('_') => return,
+            Some(name @ 'A'..='Z') => {
+                let name = name.to_ascii_lowercase();
+                let joined = match self.registers.remove(&name) {
+                    Some(old) => Arc::new(append(
+                        Arc::unwrap_or_clone(old),
+                        Arc::unwrap_or_clone(register),
+                        newline,
+                    )),
+                    None => register,
+                };
+                self.registers.insert(name, Arc::clone(&joined));
+                joined
+            }
+            Some(name) => {
+                let Some(name) = stored_name(name) else {
+                    return;
+                };
+                if name == '+' {
+                    let text = register.text(newline);
+                    self.clipboard = Some(text.clone());
+                    requests.push(Request::SetClipboard { text });
+                }
+                self.registers.insert(name, Arc::clone(&register));
+                register
+            }
+        };
+        self.registers.insert('"', register);
+    }
+
+    /// Before `editor` runs a command: ends its record if its undo group
+    /// closed since its last run, making the record the last change. Also
+    /// drops every record whose editor no longer exists, since nothing can
+    /// finish it: an editor closed while typing leaves its change
+    /// unfinished, and the last change stays the one before.
+    pub(crate) fn end_closed_record(&mut self, editor: &EditorId, in_group: bool) {
+        if !in_group {
+            self.finish_record(editor);
+        }
+        self.recordings
+            .retain(|recording| recording.editor.strong_count() > 0);
+    }
+
+    /// Whether a record is open on `editor`.
+    pub(crate) fn is_recording(&self, editor: &EditorId) -> bool {
+        self.recordings.iter().any(|r| editor.is(&r.editor))
+    }
+
+    /// Adds `invocation` to the record open on `editor`, or starts a new
+    /// record there with it. Records open on other editors stay open.
+    pub(crate) fn record(&mut self, editor: &EditorId, invocation: &Invocation) {
+        match self.recordings.iter_mut().find(|r| editor.is(&r.editor)) {
+            Some(recording) => recording.invocations.push(invocation.clone()),
+            None => self.recordings.push(Recording {
+                editor: editor.weak(),
+                invocations: vec![invocation.clone()],
+            }),
+        }
+    }
+
+    /// Takes back the last invocation recorded on `editor`, after it
+    /// failed, dropping the record if that was all it held.
+    pub(crate) fn unrecord(&mut self, editor: &EditorId) {
+        if let Some(i) = self.recordings.iter().position(|r| editor.is(&r.editor)) {
+            let recording = &mut self.recordings[i];
+            recording.invocations.pop();
+            if recording.invocations.is_empty() {
+                self.recordings.swap_remove(i);
+            }
+        }
+    }
+
+    /// Makes the record open on `editor`, if any, the last change.
+    pub(crate) fn finish_record(&mut self, editor: &EditorId) {
+        if let Some(i) = self.recordings.iter().position(|r| editor.is(&r.editor)) {
+            self.last_change = Some(self.recordings.swap_remove(i).invocations);
+        }
+    }
+
+    /// The invocations recorded so far on `editor`, if a record is open
+    /// there.
+    pub(crate) fn recorded(&self, editor: &EditorId) -> Option<&[Invocation]> {
+        self.recordings
+            .iter()
+            .find(|r| editor.is(&r.editor))
+            .map(|r| r.invocations.as_slice())
+    }
+
+    /// How many records are open, for tests.
+    #[cfg(test)]
+    pub(crate) fn open_records(&self) -> usize {
+        self.recordings.len()
+    }
+}
+
+/// The register `name` is stored under, or `None` if `name` isn't one
+/// that holds text.
+fn stored_name(name: char) -> Option<char> {
+    match name {
+        '"' | '0'..='9' | 'a'..='z' | '-' | '+' => Some(name),
+        'A'..='Z' => Some(name.to_ascii_lowercase()),
+        '*' => Some('+'),
+        _ => None,
+    }
+}
+
+/// `old` with `new` appended (Vim's `A` to `Z`): piece by piece when both
+/// have as many pieces, and as one piece each otherwise. Linewise onto
+/// charwise, or the reverse, is linewise, each charwise piece ending with
+/// `newline`.
+fn append(old: Register, new: Register, newline: &str) -> Register {
+    let linewise = old.linewise || new.linewise;
+    let lines = |register: Register| -> Vec<String> {
+        let as_lines = linewise && !register.linewise;
+        let pieces = register.pieces.into_iter().map(|mut piece| {
+            if as_lines {
+                piece.push_str(newline);
+            }
+            piece
+        });
+        pieces.collect()
+    };
+    let (old, new) = if old.pieces.len() == new.pieces.len() {
+        (lines(old), lines(new))
+    } else {
+        let one = |register: Register| {
+            let text = Register {
+                pieces: vec![register.text(newline)],
+                linewise: register.linewise,
+            };
+            lines(text)
+        };
+        (one(old), one(new))
+    };
+    Register {
+        pieces: old.into_iter().zip(new).map(|(a, b)| a + &b).collect(),
+        linewise,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use helm_text::{Buffer, BufferSet, FileFormat, LineEndings};
+
+    use crate::{CommandRegistry, Editor, Invocation, Session, vim_commands as ids};
+
+    fn run(
+        registry: &CommandRegistry,
+        editor: &mut Editor,
+        set: &mut BufferSet,
+        session: &mut Session,
+        invocation: Invocation,
+    ) {
+        registry
+            .run_in(&invocation, editor, set, session)
+            .expect("the command runs");
+    }
+
+    fn counted(id: &str, count: usize) -> Invocation {
+        let mut invocation = Invocation::new(id);
+        invocation.args.count = Some(count);
+        invocation
+    }
+
+    #[test]
+    fn records_of_closed_editors_are_dropped() {
+        let registry = CommandRegistry::with_vim_commands();
+        let mut set = BufferSet::new();
+        let id = set.add(Buffer::from("ab\ncd"));
+        let format = FileFormat {
+            bom: false,
+            line_endings: LineEndings::count("ab\ncd"),
+        };
+        let mut session = Session::new();
+
+        // A live editor in the middle of a counted insert.
+        let mut live = Editor::new(id, format);
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            counted(ids::INSERT, 3),
+        );
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            Invocation::insert("x"),
+        );
+
+        // A hundred views that start typing and are closed, some after
+        // their group was closed from outside.
+        for i in 0..100 {
+            let mut view = Editor::new(id, format);
+            run(
+                &registry,
+                &mut view,
+                &mut set,
+                &mut session,
+                Invocation::new(ids::APPEND),
+            );
+            run(
+                &registry,
+                &mut view,
+                &mut set,
+                &mut session,
+                Invocation::insert("q"),
+            );
+            if i % 2 == 0 {
+                view.end_undo_group();
+            }
+        }
+        // Each view's own runs already dropped the records of views closed
+        // before it, so only the live record and the last view's are left.
+        assert_eq!(session.open_records(), 2);
+
+        // The live editor's next command drops the closed views' records
+        // and keeps its own, which still repeats its typing on Escape.
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            Invocation::insert("y"),
+        );
+        assert_eq!(session.open_records(), 1);
+        assert_eq!(session.last_change(), None);
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            Invocation::new(ids::NORMAL),
+        );
+        assert_eq!(session.open_records(), 0);
+        let change: Vec<&str> = session
+            .last_change()
+            .expect("the live editor's change")
+            .iter()
+            .map(|i| i.command.as_str())
+            .collect();
+        assert_eq!(
+            change,
+            [ids::INSERT, "editor.insert", "editor.insert", ids::NORMAL]
+        );
+        let text = set.get(id).expect("in the set").to_string();
+        assert!(text.starts_with("xyxyxy"), "{text:?}");
+    }
+
+    #[test]
+    fn a_completed_change_survives_closed_editors() {
+        let registry = CommandRegistry::with_vim_commands();
+        let mut set = BufferSet::new();
+        let id = set.add(Buffer::from("abc"));
+        let format = FileFormat {
+            bom: false,
+            line_endings: LineEndings::count("abc"),
+        };
+        let mut session = Session::new();
+        let mut a = Editor::new(id, format);
+        run(
+            &registry,
+            &mut a,
+            &mut set,
+            &mut session,
+            Invocation::new(ids::DELETE_CHAR),
+        );
+        {
+            let mut b = Editor::new(id, format);
+            run(
+                &registry,
+                &mut b,
+                &mut set,
+                &mut session,
+                Invocation::new(ids::INSERT),
+            );
+        }
+        run(
+            &registry,
+            &mut a,
+            &mut set,
+            &mut session,
+            Invocation::new(ids::RIGHT),
+        );
+        assert_eq!(session.open_records(), 0);
+        assert_eq!(
+            session.last_change().map(|c| c[0].command.as_str()),
+            Some(ids::DELETE_CHAR)
+        );
     }
 }

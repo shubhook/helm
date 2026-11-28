@@ -17,6 +17,8 @@
 //! | [`VISUAL_LINE`] | `Count` | `V`: a selection of whole lines. |
 //! | [`DELETE_PENDING`] | `Count` | `d` is waiting for its motion. |
 //! | [`CHANGE_PENDING`] | `Count` | `c` is waiting for its motion. |
+//! | [`YANK_PENDING`] | `Count` | `y` is waiting for its motion or object (T-109). |
+//! | [`COMMAND_LINE`] | [`Line`](crate::Typing::Line) | The command line after `:` (T-109). |
 //!
 //! The mode lives in the editor's [`KeyState`](crate::KeyState), not in
 //! the [`Editor`](crate::Editor). The commands don't know the mode: each
@@ -279,8 +281,8 @@
 //! # Insert mode
 //!
 //! Each of these opens an undo group (see [`Editor`](crate::Editor),
-//! "Undo groups") and enters insert mode. They ignore a count: `3ix` with
-//! its repeat is T-109's.
+//! "Undo groups") and enters insert mode. Their count repeats the typing
+//! on Escape (T-109's "Counted inserts").
 //!
 //! | Key | Id | Where typing starts |
 //! | --- | --- | --- |
@@ -410,7 +412,9 @@
 //! only: a word object never crosses a line break. `iw` is the run under
 //! the cursor, white space included, and `n` takes `n` runs. `aw` is the
 //! word and the white space after it; on white space, the white space and
-//! the word after it. If there is no white space after (a line break or the
+//! the word after it, `n` times; a word with no white space before it
+//! counts on its own, so `d2aw` on white space before `foo.bar` deletes the
+//! white space, `foo` and `.`. If there is no white space after (a line break or the
 //! end of the text follows), it takes the white space before the word
 //! instead. `n` takes `n` words. A count that runs past the end of the
 //! line finds nothing (Vim also moves the cursor there; Helm leaves it).
@@ -424,8 +428,9 @@
 //! (the line break before those blanks is left out too, so the brackets
 //! keep their lines). When both are left out, `i` is linewise over the
 //! lines between, so `di{` on a block of lines leaves `{` and `}` on their
-//! own lines and `ci{` leaves one empty line to type in. An empty `i` finds
-//! nothing. All measured in Vim 9.1.
+//! own lines and `ci{` leaves one empty line to type in. When both are left
+//! out and one empty line is between them, `i` is that line. Any other
+//! empty `i` finds nothing. All measured in Vim 9.1.
 //!
 //! **Quotes.** Only within the cursor's line. A quote right after a
 //! backslash doesn't count. On a quote, its index among the line's quotes
@@ -503,7 +508,9 @@
 //! puts are one transaction. The bytes are the register's exactly: line
 //! breaks aren't converted, so ED-1's round trip keeps every byte. An empty
 //! register puts nothing, and visual `p` with one leaves visual mode and
-//! changes nothing. Linewise text over a charwise selection goes on its
+//! changes nothing. So does a put whose text, over all its cursors and its
+//! count, would be more than 1 GiB, such as `99999999999999999999p`: Vim
+//! refuses that with E1240, and Helm has no error to return for it. Linewise text over a charwise selection goes on its
 //! own line, and charwise text over lines gets a line break after it.
 //!
 //! # `.` repeat (T-109)
@@ -522,7 +529,9 @@
 //!   every `CommandArgs` field. A change that leaves its undo group open
 //!   keeps every later invocation on that editor until the group closes,
 //!   Escape's `vim.normal` included. A group closed some other way ends the
-//!   record at that editor's next command, before it runs.
+//!   record at that editor's next command, before it runs. Each editor has
+//!   its own record, and the record of an editor that is dropped before it
+//!   finishes is dropped too, at the next command any editor runs.
 //! - `.` with a count replaces the first invocation's count, and the new
 //!   record keeps it. A first invocation naming register `1` to `8` uses the
 //!   next number (`:help redo-register`).
@@ -613,8 +622,9 @@ impl std::fmt::Display for ExError {
 
 impl std::error::Error for ExError {}
 
-/// Vim's keymap: the six modes in the module docs, in that order, and the
-/// 115 bindings below. Every binding is scoped to one mode and has no
+/// Vim's keymap: the six modes in the module docs, in that order, then
+/// [`YANK_PENDING`] and [`COMMAND_LINE`], and the 115 bindings below, then
+/// T-109's 391. Every binding is scoped to one mode and has no
 /// context. Keys are in [`KeySequence`](crate::KeySequence) notation, where
 /// Shift is folded into chars, so `G` is Shift+G and `$` is whatever key
 /// types `$`.
@@ -662,10 +672,10 @@ impl std::error::Error for ExError {}
 /// `enter`, `backspace` and `delete` run `editor.newline`,
 /// `editor.delete_backward` and `editor.delete_forward`.
 ///
-/// **T-109 adds** (391 bindings, after these 115, and two modes,
-/// [`YANK_PENDING`] with typing `Count` and [`COMMAND_LINE`] with typing
-/// `Line`). Whether they join this function or a new one is open question 2
-/// of `tasks/109-vim-objects.md`, since T-108's tests pin this one at 115:
+/// **T-109 adds** 391 bindings, after these 115, and two modes after these
+/// six, [`YANK_PENDING`] with typing `Count` and [`COMMAND_LINE`] with
+/// typing `Line`, so the keymap has eight modes and 506 bindings (Khakha's
+/// answer to question 2 of `tasks/109-vim-objects.md`):
 ///
 /// - Normal mode: `y` operator `vim.yank` then `yank_pending`; `Y`, `p`,
 ///   `P`, `.` run `vim.yank_line`, `vim.put_after`, `vim.put_before`,
@@ -715,7 +725,7 @@ pub fn keymap() -> Keymap {
     let run = |keys: &str, command: &str| Binding::run(keys, command).expect("the keys parse");
     let switch = |keys: &str, mode: &str| Binding::switch_mode(keys, mode).expect("the keys parse");
 
-    let mut bindings = Vec::with_capacity(115);
+    let mut bindings = Vec::with_capacity(115 + 391);
     for (keys, motion, _) in MOTIONS {
         bindings.push(run(keys, motion).in_mode(NORMAL));
     }
@@ -811,6 +821,8 @@ pub fn keymap() -> Keymap {
     bindings.push(run("backspace", editor::DELETE_BACKWARD).in_mode(INSERT));
     bindings.push(run("delete", editor::DELETE_FORWARD).in_mode(INSERT));
 
+    t109_bindings(&mut bindings, &MOTIONS);
+
     let modes = vec![
         Mode::new(NORMAL, Typing::Count),
         Mode::new(INSERT, Typing::Insert),
@@ -818,12 +830,187 @@ pub fn keymap() -> Keymap {
         Mode::new(VISUAL_LINE, Typing::Count),
         Mode::new(DELETE_PENDING, Typing::Count),
         Mode::new(CHANGE_PENDING, Typing::Count),
+        Mode::new(YANK_PENDING, Typing::Count),
+        Mode::new(COMMAND_LINE, Typing::Line),
     ];
-    let mut keymap = Keymap::new(NAME, modes).expect("six modes, no duplicates");
+    let mut keymap = Keymap::new(NAME, modes).expect("eight modes, no duplicates");
     for binding in bindings {
         keymap
             .bind(binding)
-            .expect("bindings name only the six modes");
+            .expect("bindings name only the eight modes");
     }
     keymap
+}
+
+/// The 391 bindings T-109 adds, after T-108's, as [`keymap`] lists them.
+/// `motions` are T-108's motion keys and their ids.
+fn t109_bindings(bindings: &mut Vec<Binding>, motions: &[(&str, &str, &str)]) {
+    let run = |keys: &str, command: &str| Binding::run(keys, command).expect("the keys parse");
+
+    bindings.push(
+        Binding::operator("y", ids::YANK)
+            .expect("the keys parse")
+            .in_mode(NORMAL)
+            .then_mode(YANK_PENDING),
+    );
+    for (keys, command) in [
+        ("Y", ids::YANK_LINE),
+        ("p", ids::PUT_AFTER),
+        ("P", ids::PUT_BEFORE),
+        (".", ids::REPEAT),
+    ] {
+        bindings.push(run(keys, command).in_mode(NORMAL));
+    }
+    bindings.push(
+        Binding::switch_mode(":", COMMAND_LINE)
+            .expect("the keys parse")
+            .in_mode(NORMAL),
+    );
+    for &(keys, motion, _) in motions {
+        bindings.push(run(keys, motion).in_mode(YANK_PENDING));
+    }
+    bindings.push(run("y", ids::LINE).in_mode(YANK_PENDING));
+    bindings.push(
+        run("enter", ids::EX)
+            .in_mode(COMMAND_LINE)
+            .then_mode(NORMAL),
+    );
+    bindings.push(
+        Binding::switch_mode("escape", NORMAL)
+            .expect("the keys parse")
+            .in_mode(COMMAND_LINE),
+    );
+    for (mode, yank, put, keep) in [
+        (
+            VISUAL,
+            ids::YANK_SELECTION,
+            ids::PUT_SELECTION,
+            ids::PUT_SELECTION_KEEP,
+        ),
+        (
+            VISUAL_LINE,
+            ids::YANK_LINES,
+            ids::PUT_LINES,
+            ids::PUT_LINES_KEEP,
+        ),
+    ] {
+        for (keys, command) in [("y", yank), ("p", put), ("P", keep)] {
+            bindings.push(run(keys, command).in_mode(mode).then_mode(NORMAL));
+        }
+    }
+
+    // Registers: `" x` in normal and both visual modes.
+    let names = ('a'..='z')
+        .chain('A'..='Z')
+        .chain('0'..='9')
+        .chain(['"', '-', '_', '+', '*']);
+    for mode in [NORMAL, VISUAL, VISUAL_LINE] {
+        for name in names.clone() {
+            let keys = format!("\" {name}");
+            bindings.push(
+                Binding::register(&keys, name)
+                    .expect("the keys parse")
+                    .in_mode(mode),
+            );
+        }
+    }
+
+    // Text objects.
+    const OBJECTS: [(&str, usize); 16] = [
+        ("w", 0),
+        ("W", 1),
+        ("(", 2),
+        (")", 2),
+        ("b", 2),
+        ("[", 3),
+        ("]", 3),
+        ("{", 4),
+        ("}", 4),
+        ("B", 4),
+        ("<", 5),
+        (">", 5),
+        ("\"", 6),
+        ("'", 7),
+        ("`", 8),
+        ("p", 9),
+    ];
+    const IDS: [[&str; 4]; 10] = [
+        [
+            ids::INNER_WORD,
+            ids::A_WORD,
+            ids::SELECT_INNER_WORD,
+            ids::SELECT_A_WORD,
+        ],
+        [
+            ids::INNER_BIG_WORD,
+            ids::A_BIG_WORD,
+            ids::SELECT_INNER_BIG_WORD,
+            ids::SELECT_A_BIG_WORD,
+        ],
+        [
+            ids::INNER_PAREN,
+            ids::A_PAREN,
+            ids::SELECT_INNER_PAREN,
+            ids::SELECT_A_PAREN,
+        ],
+        [
+            ids::INNER_BRACKET,
+            ids::A_BRACKET,
+            ids::SELECT_INNER_BRACKET,
+            ids::SELECT_A_BRACKET,
+        ],
+        [
+            ids::INNER_BRACE,
+            ids::A_BRACE,
+            ids::SELECT_INNER_BRACE,
+            ids::SELECT_A_BRACE,
+        ],
+        [
+            ids::INNER_ANGLE,
+            ids::A_ANGLE,
+            ids::SELECT_INNER_ANGLE,
+            ids::SELECT_A_ANGLE,
+        ],
+        [
+            ids::INNER_DOUBLE_QUOTE,
+            ids::A_DOUBLE_QUOTE,
+            ids::SELECT_INNER_DOUBLE_QUOTE,
+            ids::SELECT_A_DOUBLE_QUOTE,
+        ],
+        [
+            ids::INNER_SINGLE_QUOTE,
+            ids::A_SINGLE_QUOTE,
+            ids::SELECT_INNER_SINGLE_QUOTE,
+            ids::SELECT_A_SINGLE_QUOTE,
+        ],
+        [
+            ids::INNER_BACKTICK,
+            ids::A_BACKTICK,
+            ids::SELECT_INNER_BACKTICK,
+            ids::SELECT_A_BACKTICK,
+        ],
+        [
+            ids::INNER_PARAGRAPH,
+            ids::A_PARAGRAPH,
+            ids::SELECT_INNER_PARAGRAPH,
+            ids::SELECT_A_PARAGRAPH,
+        ],
+    ];
+    for (key, object) in OBJECTS {
+        let [inner, a, select_inner, select_a] = IDS[object];
+        let paragraph = key == "p";
+        for (prefix, id, select) in [("i", inner, select_inner), ("a", a, select_a)] {
+            let keys = format!("{prefix} {key}");
+            bindings.push(run(&keys, id).in_mode(DELETE_PENDING));
+            bindings.push(run(&keys, id).in_mode(CHANGE_PENDING).then_mode(INSERT));
+            bindings.push(run(&keys, id).in_mode(YANK_PENDING));
+            if paragraph {
+                bindings.push(run(&keys, select).in_mode(VISUAL).then_mode(VISUAL_LINE));
+                bindings.push(run(&keys, select).in_mode(VISUAL_LINE));
+            } else {
+                bindings.push(run(&keys, select).in_mode(VISUAL));
+                bindings.push(run(&keys, select).in_mode(VISUAL_LINE).then_mode(VISUAL));
+            }
+        }
+    }
 }

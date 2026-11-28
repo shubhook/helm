@@ -191,6 +191,19 @@ pub(crate) struct Reads {
 }
 
 impl Reads {
+    /// The text in `range`, if one window already read holds all of it
+    /// (T-109). A register copies an operator's range from here, so the
+    /// common case reads no text a second time.
+    pub(crate) fn text(&self, range: &std::ops::Range<usize>) -> Option<&str> {
+        [&self.forward, &self.backward]
+            .into_iter()
+            .find_map(|window| {
+                let start = range.start.checked_sub(window.start)?;
+                let end = range.end.checked_sub(window.start)?;
+                window.text.get(start..end)
+            })
+    }
+
     /// Whether `at` is a char boundary, if it falls in text already read.
     fn boundary(&self, at: usize) -> Option<bool> {
         [&self.forward, &self.backward]

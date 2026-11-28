@@ -10,7 +10,6 @@ use helm_editor::{CommandArgs, CommandId, vim, vim_commands};
 use vim_harness::{Vim, keymap, table};
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_repeats_one_key_edits_and_operators() {
     table(&[
         ("|abcd", "x.", "|cd"),
@@ -25,7 +24,6 @@ fn dot_repeats_one_key_edits_and_operators() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_with_a_count_replaces_the_recorded_count() {
     table(&[
         ("|abcdef", "2x3.", "|f"),
@@ -36,7 +34,6 @@ fn dot_with_a_count_replaces_the_recorded_count() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_repeats_a_change_with_its_typing() {
     table(&[
         ("|ab cd", "cwX<esc>w.", "X |X"),
@@ -53,7 +50,6 @@ fn dot_repeats_a_change_with_its_typing() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_repeats_a_put() {
     table(&[
         ("|ab", "ylp.", "aa|ab"),
@@ -63,7 +59,6 @@ fn dot_repeats_a_put() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn each_dot_is_one_undo_step() {
     table(&[
         ("|abcd", "x.u", "|bcd"),
@@ -73,7 +68,6 @@ fn each_dot_is_one_undo_step() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn motions_yanks_undo_and_redo_are_not_changes() {
     table(&[
         ("|ab cd", "xwyiw.", "b |d"),
@@ -84,7 +78,6 @@ fn motions_yanks_undo_and_redo_are_not_changes() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_visual_change_is_not_recorded() {
     // Vim repeats a visual change over the same amount of text. That is
     // left out of T-109 (open question 4), so `.` repeats the change
@@ -96,13 +89,11 @@ fn a_visual_change_is_not_recorded() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_before_any_change_does_nothing() {
     table(&[("a|b", ".", "a|b"), ("a|b", "3.", "a|b")]);
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_works_at_every_cursor() {
     table(&[
         ("|ab\n|cd", "x.", "|\n|"),
@@ -111,7 +102,6 @@ fn dot_works_at_every_cursor() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn the_last_change_is_the_recorded_invocations() {
     let mut v = Vim::new("|ab cd");
     v.keys("2d3w");
@@ -158,7 +148,6 @@ fn the_last_change_is_the_recorded_invocations() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn dot_repeats_in_another_editor_on_the_same_session() {
     let mut a = Vim::new("|ab cd");
     a.keys("cwX<esc>");
@@ -169,7 +158,6 @@ fn dot_repeats_in_another_editor_on_the_same_session() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn a_change_ended_by_a_closed_group_still_repeats_and_ends_in_normal_mode() {
     // What `helm-ui` does on a keymap switch: close every open group.
     let mut v = Vim::new("|ab");
@@ -187,7 +175,6 @@ fn a_change_ended_by_a_closed_group_still_repeats_and_ends_in_normal_mode() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn counted_inserts_repeat_the_typing() {
     table(&[
         ("|ab", "3ix<esc>", "xx|xab"),
@@ -208,7 +195,6 @@ fn counted_inserts_repeat_the_typing() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn c_s_and_their_forms_keep_t_108s_count() {
     table(&[
         ("|abc", "2sX<esc>", "|Xc"),
@@ -219,7 +205,6 @@ fn c_s_and_their_forms_keep_t_108s_count() {
 }
 
 #[test]
-#[ignore = "T-109: not implemented yet"]
 fn replaying_whole_invocations_leaves_room_for_more_arguments() {
     // `.` copies every `CommandArgs` field it recorded, so a field added
     // later (the char `f`, `t` and `r` will need) needs no change to `.`.

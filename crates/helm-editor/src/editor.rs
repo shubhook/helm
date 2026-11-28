@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::{Arc, Weak};
 
 use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
@@ -13,7 +14,7 @@ use crate::{EditorError, Motion, Selection, Selections};
 
 mod vim;
 
-pub(crate) use vim::{Entry, Operator};
+pub(crate) use vim::{Entry, Operator, Target};
 
 /// The selections on one buffer of a [`BufferSet`], and the commands that
 /// edit at every selection or add new ones.
@@ -134,8 +135,11 @@ pub(crate) use vim::{Entry, Operator};
 /// key reaches the new keymap. Otherwise typing in the new keymap folds
 /// into the group the old one opened. Grouping VS Code's typing by pauses
 /// and cursor moves is a later task.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Editor {
+    /// This editor's own identity (T-109), so a session can tell two views
+    /// of one buffer apart. [`Clone`] gives the copy a new one.
+    id: EditorId,
     buffer: BufferId,
     format: FileFormat,
     selections: Selections,
@@ -153,6 +157,57 @@ pub struct Editor {
     /// The open undo group, if any, and the transaction its edits fold
     /// into once its first edit has applied one.
     group: Option<Option<TransactionId>>,
+}
+
+/// An [`Editor`]'s identity (T-109). Vim's `.` record belongs to the
+/// editor that made it, not to its buffer, since two editors can show one
+/// buffer.
+///
+/// The editor owns the only strong reference. A [`Session`](crate::Session)
+/// keeps a [`Weak`] one with each open record, so it can tell which editor
+/// a record belongs to and, once that editor is dropped, that nobody will
+/// finish the record. The allocation outlives the editor while any weak
+/// reference does, so its address is never reused for another editor while
+/// a record still points at it.
+#[derive(Clone, Debug)]
+pub(crate) struct EditorId(Arc<()>);
+
+impl EditorId {
+    /// A new identity.
+    fn next() -> Self {
+        Self(Arc::new(()))
+    }
+
+    /// A weak reference to this identity, for a record to keep.
+    pub(crate) fn weak(&self) -> Weak<()> {
+        Arc::downgrade(&self.0)
+    }
+
+    /// Whether `weak` is a reference to this identity.
+    pub(crate) fn is(&self, weak: &Weak<()>) -> bool {
+        std::ptr::eq(Weak::as_ptr(weak), Arc::as_ptr(&self.0))
+    }
+}
+
+impl Clone for Editor {
+    /// A copy with the same selections, history and undo group, and an
+    /// identity of its own: it is another view. A Vim change still being
+    /// recorded belongs to the original, so a copy made in the middle of
+    /// typing keeps the open undo group but not the record. Its Escape
+    /// doesn't repeat a counted insert, and `.` still repeats the last
+    /// change the session finished.
+    fn clone(&self) -> Self {
+        Self {
+            id: EditorId::next(),
+            buffer: self.buffer,
+            format: self.format,
+            selections: self.selections.clone(),
+            history: self.history.clone(),
+            undone: self.undone.clone(),
+            goals: self.goals.clone(),
+            group: self.group,
+        }
+    }
 }
 
 /// The selections just before and just after one transaction.
@@ -178,6 +233,7 @@ impl Editor {
     /// [`newline`](Self::newline) inserts.
     pub fn new(buffer: BufferId, format: FileFormat) -> Self {
         Self {
+            id: EditorId::next(),
             buffer,
             format,
             selections: Selections::single(Selection::cursor(0)),
@@ -186,6 +242,11 @@ impl Editor {
             goals: Vec::new(),
             group: None,
         }
+    }
+
+    /// This editor's identity (T-109).
+    pub(crate) fn id(&self) -> &EditorId {
+        &self.id
     }
 
     /// The buffer this editor edits.

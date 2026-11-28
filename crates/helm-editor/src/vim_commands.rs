@@ -13,9 +13,18 @@
 //! [`CommandArgs::count`]: crate::CommandArgs::count
 //! [`CommandArgs::motion`]: crate::CommandArgs::motion
 
-use crate::editor::{Entry, Operator};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::editor::{Entry, Operator, Target};
 use crate::motion::vim::VimMotion;
-use crate::{Command, CommandContext, CommandError, CommandFn, CommandId, CommandRegistry};
+use crate::motion::vim::object::VimObject;
+use crate::session::Write;
+use crate::vim::ExError;
+use crate::{
+    Command, CommandContext, CommandError, CommandFn, CommandId, CommandRegistry, Invocation,
+    Register, Request,
+};
 
 /// `h`: one char back within the line.
 pub const LEFT: &str = "vim.left";
@@ -138,9 +147,8 @@ pub const UNDO: &str = "vim.undo";
 /// `ctrl-r`: redo `n` times.
 pub const REDO: &str = "vim.redo";
 
-// T-109. These ids aren't in `ALL` yet: whether `ALL` grows or a second
-// list holds them is open question 2 of `tasks/109-vim-objects.md`, since
-// T-108's `tests/vim_keymap.rs` pins `ALL` at 55 ids.
+// T-109's 52 ids. They join `ALL`, as Khakha's answer to question 2 of
+// `tasks/109-vim-objects.md` grants.
 
 /// `y`: the yank operator, waiting in `yank_pending` for a motion or a
 /// text object (T-109).
@@ -254,7 +262,17 @@ pub const SELECT_INNER_PARAGRAPH: &str = "vim.select_inner_paragraph";
 pub const SELECT_A_PARAGRAPH: &str = "vim.select_a_paragraph";
 
 /// Every id above, sorted.
-pub const ALL: [&str; 55] = [
+pub const ALL: [&str; 107] = [
+    A_ANGLE,
+    A_BACKTICK,
+    A_BIG_WORD,
+    A_BRACE,
+    A_BRACKET,
+    A_DOUBLE_QUOTE,
+    A_PARAGRAPH,
+    A_PAREN,
+    A_SINGLE_QUOTE,
+    A_WORD,
     APPEND,
     APPEND_LINE_END,
     BIG_WORD_END,
@@ -269,9 +287,20 @@ pub const ALL: [&str; 55] = [
     DELETE_SELECTION,
     DELETE_TO_LINE_END,
     DOWN,
+    EX,
     EXIT_VISUAL,
     FIRST_LINE,
     FIRST_NON_BLANK,
+    INNER_ANGLE,
+    INNER_BACKTICK,
+    INNER_BIG_WORD,
+    INNER_BRACE,
+    INNER_BRACKET,
+    INNER_DOUBLE_QUOTE,
+    INNER_PARAGRAPH,
+    INNER_PAREN,
+    INNER_SINGLE_QUOTE,
+    INNER_WORD,
     INSERT,
     INSERT_LINE_START,
     LAST_LINE,
@@ -286,12 +315,39 @@ pub const ALL: [&str; 55] = [
     OPEN_BELOW,
     PREV_BIG_WORD,
     PREV_WORD,
+    PUT_AFTER,
+    PUT_BEFORE,
+    PUT_LINES,
+    PUT_LINES_KEEP,
+    PUT_SELECTION,
+    PUT_SELECTION_KEEP,
     REDO,
+    REPEAT,
     RIGHT,
+    SELECT_A_ANGLE,
+    SELECT_A_BACKTICK,
+    SELECT_A_BIG_WORD,
+    SELECT_A_BRACE,
+    SELECT_A_BRACKET,
+    SELECT_A_DOUBLE_QUOTE,
+    SELECT_A_PARAGRAPH,
+    SELECT_A_PAREN,
+    SELECT_A_SINGLE_QUOTE,
+    SELECT_A_WORD,
     SELECT_BIG_WORD_END,
     SELECT_DOWN,
     SELECT_FIRST_LINE,
     SELECT_FIRST_NON_BLANK,
+    SELECT_INNER_ANGLE,
+    SELECT_INNER_BACKTICK,
+    SELECT_INNER_BIG_WORD,
+    SELECT_INNER_BRACE,
+    SELECT_INNER_BRACKET,
+    SELECT_INNER_DOUBLE_QUOTE,
+    SELECT_INNER_PARAGRAPH,
+    SELECT_INNER_PAREN,
+    SELECT_INNER_SINGLE_QUOTE,
+    SELECT_INNER_WORD,
     SELECT_LAST_LINE,
     SELECT_LEFT,
     SELECT_LINE_END,
@@ -310,10 +366,45 @@ pub const ALL: [&str; 55] = [
     UP,
     VISUAL,
     WORD_END,
+    YANK,
+    YANK_LINE,
+    YANK_LINES,
+    YANK_SELECTION,
+];
+
+/// The commands Vim's `.` repeats (T-109).
+const CHANGES: [&str; 16] = [
+    DELETE,
+    CHANGE,
+    DELETE_CHAR,
+    DELETE_CHAR_BEFORE,
+    DELETE_TO_LINE_END,
+    CHANGE_TO_LINE_END,
+    SUBSTITUTE,
+    SUBSTITUTE_LINE,
+    INSERT,
+    APPEND,
+    INSERT_LINE_START,
+    APPEND_LINE_END,
+    OPEN_BELOW,
+    OPEN_ABOVE,
+    PUT_AFTER,
+    PUT_BEFORE,
+];
+
+/// The commands that start typing, whose count repeats what was typed
+/// (T-109).
+const ENTRIES: [&str; 6] = [
+    INSERT,
+    APPEND,
+    INSERT_LINE_START,
+    APPEND_LINE_END,
+    OPEN_BELOW,
+    OPEN_ABOVE,
 ];
 
 /// Registers one command for each id in [`ALL`], each with a non-empty
-/// title.
+/// title, and marks the changes `.` repeats.
 pub(crate) fn register_all(registry: &mut CommandRegistry) {
     let motions: [(CommandFn, CommandFn, &str, &str); 16] = [
         (moves::<0>, selects::<0>, "Vim: left", "Vim: select left"),
@@ -397,9 +488,42 @@ pub(crate) fn register_all(registry: &mut CommandRegistry) {
             commands.push((select, select_title, run_select));
         }
     }
-    let others: [(&str, &'static str, CommandFn); 24] = [
+    let others: [(&str, &'static str, CommandFn); 36] = [
         (DELETE, "Vim: delete", |cx| operate(cx, Operator::Delete)),
         (CHANGE, "Vim: change", |cx| operate(cx, Operator::Change)),
+        (YANK, "Vim: yank", yank),
+        (YANK_LINE, "Vim: yank line", |cx| {
+            let target = Target::Motion(VimMotion::Line);
+            let register = cx.editor.vim_yank(cx.set, target, cx.args.count)?;
+            write(cx, register, Write::Yank);
+            Ok(())
+        }),
+        (PUT_AFTER, "Vim: put after", |cx| put(cx, true)),
+        (PUT_BEFORE, "Vim: put before", |cx| put(cx, false)),
+        (YANK_SELECTION, "Vim: yank selection", |cx| {
+            yank_selections(cx, false)
+        }),
+        (YANK_LINES, "Vim: yank selected lines", |cx| {
+            yank_selections(cx, true)
+        }),
+        (PUT_SELECTION, "Vim: put over selection", |cx| {
+            put_selections(cx, false, false)
+        }),
+        (
+            PUT_SELECTION_KEEP,
+            "Vim: put over selection, keeping the register",
+            |cx| put_selections(cx, false, true),
+        ),
+        (PUT_LINES, "Vim: put over selected lines", |cx| {
+            put_selections(cx, true, false)
+        }),
+        (
+            PUT_LINES_KEEP,
+            "Vim: put over selected lines, keeping the register",
+            |cx| put_selections(cx, true, true),
+        ),
+        (REPEAT, "Vim: repeat last change", repeat),
+        (EX, "Vim: run command line", ex),
         (DELETE_CHAR, "Vim: delete char", |cx| {
             one_key(cx, Operator::Delete, VimMotion::Right)
         }),
@@ -434,10 +558,7 @@ pub(crate) fn register_all(registry: &mut CommandRegistry) {
             cx.editor.vim_open_line(cx.set, false)?;
             Ok(())
         }),
-        (NORMAL, "Vim: normal mode", |cx| {
-            cx.editor.vim_leave_insert(cx.set)?;
-            Ok(())
-        }),
+        (NORMAL, "Vim: normal mode", leave_insert),
         (VISUAL, "Vim: visual mode", |cx| {
             cx.editor.vim_visual(cx.set)?;
             Ok(())
@@ -472,6 +593,134 @@ pub(crate) fn register_all(registry: &mut CommandRegistry) {
         }),
     ];
     commands.extend(others);
+    let objects: [(CommandFn, CommandFn, &str, &str); 20] = [
+        (
+            objects::<0>,
+            selects_object::<0>,
+            "Vim: inner word",
+            "Vim: select inner word",
+        ),
+        (
+            objects::<1>,
+            selects_object::<1>,
+            "Vim: a word",
+            "Vim: select a word",
+        ),
+        (
+            objects::<2>,
+            selects_object::<2>,
+            "Vim: inner WORD",
+            "Vim: select inner WORD",
+        ),
+        (
+            objects::<3>,
+            selects_object::<3>,
+            "Vim: a WORD",
+            "Vim: select a WORD",
+        ),
+        (
+            objects::<4>,
+            selects_object::<4>,
+            "Vim: inner parentheses",
+            "Vim: select inner parentheses",
+        ),
+        (
+            objects::<5>,
+            selects_object::<5>,
+            "Vim: a parentheses block",
+            "Vim: select a parentheses block",
+        ),
+        (
+            objects::<6>,
+            selects_object::<6>,
+            "Vim: inner brackets",
+            "Vim: select inner brackets",
+        ),
+        (
+            objects::<7>,
+            selects_object::<7>,
+            "Vim: a brackets block",
+            "Vim: select a brackets block",
+        ),
+        (
+            objects::<8>,
+            selects_object::<8>,
+            "Vim: inner braces",
+            "Vim: select inner braces",
+        ),
+        (
+            objects::<9>,
+            selects_object::<9>,
+            "Vim: a braces block",
+            "Vim: select a braces block",
+        ),
+        (
+            objects::<10>,
+            selects_object::<10>,
+            "Vim: inner angle brackets",
+            "Vim: select inner angle brackets",
+        ),
+        (
+            objects::<11>,
+            selects_object::<11>,
+            "Vim: an angle brackets block",
+            "Vim: select an angle brackets block",
+        ),
+        (
+            objects::<12>,
+            selects_object::<12>,
+            "Vim: inner double quotes",
+            "Vim: select inner double quotes",
+        ),
+        (
+            objects::<13>,
+            selects_object::<13>,
+            "Vim: a double-quoted string",
+            "Vim: select a double-quoted string",
+        ),
+        (
+            objects::<14>,
+            selects_object::<14>,
+            "Vim: inner single quotes",
+            "Vim: select inner single quotes",
+        ),
+        (
+            objects::<15>,
+            selects_object::<15>,
+            "Vim: a single-quoted string",
+            "Vim: select a single-quoted string",
+        ),
+        (
+            objects::<16>,
+            selects_object::<16>,
+            "Vim: inner backticks",
+            "Vim: select inner backticks",
+        ),
+        (
+            objects::<17>,
+            selects_object::<17>,
+            "Vim: a backtick string",
+            "Vim: select a backtick string",
+        ),
+        (
+            objects::<18>,
+            selects_object::<18>,
+            "Vim: inner paragraph",
+            "Vim: select inner paragraph",
+        ),
+        (
+            objects::<19>,
+            selects_object::<19>,
+            "Vim: a paragraph",
+            "Vim: select a paragraph",
+        ),
+    ];
+    for (&(_, id, select), (run, run_select, title, select_title)) in
+        VimObject::ALL.iter().zip(objects)
+    {
+        commands.push((id, title, run));
+        commands.push((select, select_title, run_select));
+    }
     for (id, title, run) in commands {
         registry
             .register(Command {
@@ -480,6 +729,9 @@ pub(crate) fn register_all(registry: &mut CommandRegistry) {
                 run,
             })
             .expect("Vim command ids are valid and distinct");
+    }
+    for id in CHANGES {
+        registry.mark_change(id);
     }
 }
 
@@ -497,13 +749,24 @@ fn selects<const I: usize>(cx: CommandContext<'_>) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// [`DELETE`] and [`CHANGE`]: `operator` with the invocation's motion, or
-/// nothing at all if that isn't one of the motions here.
+/// What an operator's motion id names: one of the motions here, or one of
+/// the text objects (T-109).
+fn target(id: Option<&CommandId>) -> Option<Target> {
+    let id = id?.as_str();
+    VimMotion::from_id(id)
+        .map(Target::Motion)
+        .or_else(|| VimObject::from_id(id).map(Target::Object))
+}
+
+/// [`DELETE`] and [`CHANGE`]: `operator` with the invocation's motion or
+/// object, or nothing at all if that isn't one of the motions or objects
+/// here. Writes what it deleted to the registers (T-109).
 fn operate(cx: CommandContext<'_>, operator: Operator) -> Result<(), CommandError> {
-    let motion = cx.args.motion.as_ref();
-    if let Some(motion) = motion.and_then(|id| VimMotion::from_id(id.as_str())) {
-        cx.editor
-            .vim_operate(cx.set, operator, motion, cx.args.count)?;
+    if let Some(target) = target(cx.args.motion.as_ref()) {
+        let register = cx
+            .editor
+            .vim_operate(cx.set, operator, target, cx.args.count)?;
+        write(cx, register, Write::Delete);
     }
     Ok(())
 }
@@ -514,9 +777,206 @@ fn one_key(
     operator: Operator,
     motion: VimMotion,
 ) -> Result<(), CommandError> {
-    cx.editor
-        .vim_operate(cx.set, operator, motion, cx.args.count)?;
+    let register =
+        cx.editor
+            .vim_operate(cx.set, operator, Target::Motion(motion), cx.args.count)?;
+    write(cx, register, Write::Delete);
     Ok(())
+}
+
+/// Writes what a command took from the text to the register the
+/// invocation names, or as `write` does with none (T-109).
+fn write(cx: CommandContext<'_>, register: Option<Register>, write: Write) {
+    if let Some(register) = register {
+        let newline = cx.editor.format().newline();
+        cx.session.write(
+            cx.args.register,
+            register,
+            write,
+            newline.as_str(),
+            cx.requests,
+        );
+    }
+}
+
+/// [`YANK`]: yanks the invocation's motion or object at every cursor.
+fn yank(cx: CommandContext<'_>) -> Result<(), CommandError> {
+    if let Some(target) = target(cx.args.motion.as_ref()) {
+        let register = cx.editor.vim_yank(cx.set, target, cx.args.count)?;
+        write(cx, register, Write::Yank);
+    }
+    Ok(())
+}
+
+/// Visual `y`, on the selections or on their lines.
+fn yank_selections(cx: CommandContext<'_>, lines: bool) -> Result<(), CommandError> {
+    let register = cx.editor.vim_yank_selections(cx.set, lines)?;
+    write(cx, register, Write::Yank);
+    Ok(())
+}
+
+/// The register the invocation names, or the unnamed one. The session
+/// shares its copy, so a 1 MB clipboard register isn't copied here.
+fn named(cx: &CommandContext<'_>) -> Option<Arc<Register>> {
+    cx.session.shared(cx.args.register.unwrap_or('"'))
+}
+
+/// [`PUT_AFTER`] and [`PUT_BEFORE`].
+fn put(cx: CommandContext<'_>, after: bool) -> Result<(), CommandError> {
+    if let Some(register) = named(&cx) {
+        cx.editor.vim_put(cx.set, &register, after, cx.args.count)?;
+    }
+    Ok(())
+}
+
+/// Visual `p` and `P`: puts over the selections or their lines, then,
+/// unless `keep`, writes what they held as a delete does.
+fn put_selections(cx: CommandContext<'_>, lines: bool, keep: bool) -> Result<(), CommandError> {
+    let register = named(&cx);
+    let replaced =
+        cx.editor
+            .vim_put_selections(cx.set, register.as_deref(), lines, keep, cx.args.count)?;
+    if !keep {
+        let newline = cx.editor.format().newline();
+        if let Some(replaced) = replaced {
+            cx.session
+                .write(None, replaced, Write::Delete, newline.as_str(), cx.requests);
+        }
+    }
+    Ok(())
+}
+
+/// The object at index `I` of [`VimObject::ALL`] on its own: it does
+/// nothing.
+fn objects<const I: usize>(_: CommandContext<'_>) -> Result<(), CommandError> {
+    Ok(())
+}
+
+/// The object at index `I` of [`VimObject::ALL`], in a visual mode.
+fn selects_object<const I: usize>(cx: CommandContext<'_>) -> Result<(), CommandError> {
+    let (object, _, _) = VimObject::ALL[I];
+    cx.editor.vim_select_object(cx.set, object, cx.args.count)?;
+    Ok(())
+}
+
+/// Escape in insert mode (T-108). After a counted `i`, `a`, `I`, `A`, `o`
+/// or `O`, first runs what was typed again, `n - 1` more times, inside the
+/// same undo group (T-109).
+fn leave_insert(cx: CommandContext<'_>) -> Result<(), CommandError> {
+    let typed = cx.session.recorded(cx.editor.id()).and_then(|record| {
+        let (first, rest) = record.split_first()?;
+        let n = first.args.count.filter(|&n| n > 1)?;
+        if !ENTRIES.contains(&first.command.as_str()) {
+            return None;
+        }
+        // The record ends with this Escape, which is already in it.
+        let rest = match rest.split_last() {
+            Some((last, typed)) if last.command.as_str() == NORMAL => typed,
+            _ => rest,
+        };
+        let open = matches!(first.command.as_str(), OPEN_BELOW | OPEN_ABOVE);
+        Some((n, open, rest.to_vec()))
+    });
+    if let Some((n, open, typed)) = typed {
+        for _ in 1..n {
+            if open {
+                cx.editor.newline(cx.set)?;
+            }
+            for invocation in &typed {
+                cx.registry.run_unrecorded(
+                    invocation,
+                    cx.editor,
+                    cx.set,
+                    cx.session,
+                    cx.requests,
+                )?;
+            }
+        }
+    }
+    cx.editor.vim_leave_insert(cx.set)?;
+    Ok(())
+}
+
+/// [`REPEAT`]: runs the last change again, with the invocation's count in
+/// place of its first count, as the `vim` module docs' "`.` repeat" says.
+fn repeat(cx: CommandContext<'_>) -> Result<(), CommandError> {
+    let Some(change) = cx.session.last_change() else {
+        return Ok(());
+    };
+    let mut change = change.to_vec();
+    if let Some(first) = change.first_mut() {
+        if cx.args.count.is_some() {
+            first.args.count = cx.args.count;
+        }
+        if let Some(name @ '1'..='8') = first.args.register {
+            first.args.register = char::from_digit(name.to_digit(10).unwrap_or(0) + 1, 10);
+        }
+    }
+    for invocation in &change {
+        let requests = cx
+            .registry
+            .run_in(invocation, cx.editor, cx.set, cx.session)?;
+        cx.requests.extend(requests);
+    }
+    // A record that ended before Escape leaves its group open.
+    if cx.editor.in_undo_group() {
+        let requests =
+            cx.registry
+                .run_in(&Invocation::new(NORMAL), cx.editor, cx.set, cx.session)?;
+        cx.requests.extend(requests);
+    }
+    Ok(())
+}
+
+/// [`EX`]: runs the command line in the invocation's text.
+fn ex(cx: CommandContext<'_>) -> Result<(), CommandError> {
+    let line = cx.args.text.as_deref().unwrap_or("");
+    let requests = parse_ex(line).map_err(|error| CommandError::Ex {
+        line: line.to_owned(),
+        error,
+    })?;
+    cx.requests.extend(requests);
+    Ok(())
+}
+
+/// The requests command line `line` makes, as the `vim` module docs' "The
+/// command line" says.
+fn parse_ex(line: &str) -> Result<Vec<Request>, ExError> {
+    let line = line.trim_start_matches(|c: char| c == ':' || c.is_whitespace());
+    if line.is_empty() {
+        return Ok(Vec::new());
+    }
+    if line.starts_with(|c: char| c.is_ascii_digit() || ",;.$%'".contains(c)) {
+        return Err(ExError::Range);
+    }
+    let name_len = line
+        .find(|c: char| !c.is_ascii_alphabetic())
+        .unwrap_or(line.len());
+    let (name, rest) = line.split_at(name_len);
+    let (force, rest) = match rest.strip_prefix('!') {
+        Some(rest) => (true, rest),
+        None => (false, rest),
+    };
+    let path = rest.trim();
+    let path = (!path.is_empty()).then(|| PathBuf::from(path));
+    let is = |full: &str, shortest: usize| name.len() >= shortest && full.starts_with(name);
+    if name == "wq" {
+        Ok(vec![
+            Request::Save { path, force },
+            Request::Close { force: false },
+        ])
+    } else if is("write", 1) {
+        Ok(vec![Request::Save { path, force }])
+    } else if is("quit", 1) {
+        if path.is_some() {
+            return Err(ExError::TrailingCharacters);
+        }
+        Ok(vec![Request::Close { force }])
+    } else if is("edit", 1) {
+        Ok(vec![Request::Open { path, force }])
+    } else {
+        Err(ExError::NotACommand)
+    }
 }
 
 /// `i`, `a`, `I` and `A`.
@@ -531,6 +991,7 @@ fn edit_selections(
     operator: Operator,
     lines: bool,
 ) -> Result<(), CommandError> {
-    cx.editor.vim_edit_selections(cx.set, operator, lines)?;
+    let register = cx.editor.vim_edit_selections(cx.set, operator, lines)?;
+    write(cx, register, Write::Delete);
     Ok(())
 }

@@ -61,7 +61,7 @@
 //! from a [`KeySequence`] (one keystroke, or a chord such as
 //! `cmd-k cmd-s`) to a command id, each scoped to a mode and an optional
 //! context. VS Code's keymap ([`vscode::keymap`], T-107) has one mode;
-//! Vim's ([`vim::keymap`], T-108) has six. A mode says what a key no
+//! Vim's ([`vim::keymap`], T-108 and T-109) has eight. A mode says what a key no
 //! binding matches does: it types its text, it does nothing, or, in Vim's
 //! counting modes, a digit adds to a count. So typing takes the same path
 //! as every other command.
