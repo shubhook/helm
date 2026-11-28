@@ -89,6 +89,8 @@ The phases build the editor from the bottom of the architecture up, so each one 
 | 6. Terminal and git | Integrated terminal, git gutter, status and diff view | You build, test and commit without leaving Helm |
 | 7. Agents | ACP client, agent panel, multi-file diff review, apply as one undoable transaction | v1: a week of daily use instead of VS Code |
 
+Status, 28 November 2026: Phase 1's code is complete, with every task listed under "First tasks" merged except T-112, a planned follow-up.
+
 Phase 1 stays headless on purpose: the rope and transaction code is where subtle bugs live, and it is easiest to test before rendering exists. Agent support comes last because it needs diffs, a terminal and diagnostics from the earlier phases. After v1, the likely next items are the Linux port, WASM plugins and a debugger.
 
 ## How agents do the work
@@ -99,17 +101,31 @@ Every change starts as a task spec you approve and ends as a PR that passes CI a
 
 - Goal, in two or three sentences, and the PRD requirement IDs it implements.
 - The crate or crates it may touch, and the public interface it adds or changes.
+- The choices the spec made and the ones it rejected, with the reason for each.
 - Acceptance tests, committed before any agent starts. The tests are the grader.
 - The performance budget it must hold, if any.
 - What is out of scope.
+- Open questions for you, each with the default the spec takes. Your answers are quoted in the task file once you give them.
 
 **The loop for one task.**
 
-1. An agent drafts the spec and its tests. You approve or edit them, and they merge on their own.
-2. An agent branches from that commit in a clean checkout.
+1. An agent drafts the spec: the task file, the interface with `todo!()` bodies, and the tests, each marked `#[ignore]`. You approve or edit them, and they merge on their own.
+2. An agent branches from that commit in a clean checkout. Without a written grant, the only change it makes to the spec's test files is deleting the `#[ignore]` lines.
 3. The agent opens a PR. CI runs `cargo fmt --check`, `clippy` with warnings as errors, the tests, the perf benchmarks against the PR's base commit, and `cargo-deny` for licenses.
 4. CI also fails the PR if it changes the spec's test files or a budget threshold. Without this check, an agent can pass by weakening the grader.
 5. You review interfaces, `unsafe`, threading and anything the spec calls out. Then merge.
+
+A follow-up task, such as fixes for review findings or your answers to a merged PR's questions, puts its task file and its work in one PR.
+
+**Written grants.** The `approved-protected` label lets a PR past the protected-paths check, but it grants nothing by itself. An edit to a protected file that the task file doesn't already allow, such as an existing test, an existing benchmark or another task's file, needs your written grant. The PR description quotes each grant word for word, and the change goes in its own commit where the grant asks for that. If a grant would need an assertion to change that it doesn't name, the agent stops and asks.
+
+**Council review.** A spec PR or an implementation PR gets a council: three delegates, one each in Claude Code, Codex and Cursor, each review the head and give an overall score, a performance score and a verdict, SATISFIED or NOT SATISFIED. Scores are not averaged to override an objection. The agent fixes each finding, keeps it with a reason, or holds it for you, and the next round reviews the new head. An implementation PR goes round until all three are satisfied. A spec PR gets at most one round, and you decide the rest when you review the spec. If a PR merges before its round finishes, its open findings become a follow-up task. PRs that only update the README or refresh the baseline file get no council.
+
+**Speed.** `crates/helm-bench/budgets.toml` is the only speed gate: CI fails a PR if a benchmark gets more than its budget, 5% by default, slower than the PR's base commit. Each benchmark's base and head run alternately for three rounds on one runner, and `bench-compare` compares the fastest of each side's three medians. A speed target in a task file, such as a criterion mean under 500 µs, is a review aid. It isn't gated. The PR reports its CI criterion means from the bench job's artifact against the target, and you decide what a miss means.
+
+**Regressions.** A benchmark that fails its budget isn't called noise until a controlled comparison says so: base and head built from the same benchmark file and run alternately on one machine, their instructions counted, or their compiled code compared function by function. The PR reports what that comparison found and fixes the cause it finds.
+
+**Main's baseline.** `crates/helm-bench/baselines/main.toml` holds the benchmark numbers of one main commit, copied from that commit's `bench-record` artifact, which GitHub deletes after 90 days. `crates/helm-bench/baselines/refresh.sh <full sha>` rebuilds the file from a newer main commit's artifact. No check reads the file, and no PR is compared with it.
 
 **Shared instructions.** One `AGENTS.md` at the repo root holds the conventions, the crate map and the commands to run tests and benchmarks. `CLAUDE.md` points to it. Every agent reads the same file, so switching agents between tasks needs no extra setup.
 
@@ -120,12 +136,14 @@ Every change starts as a task spec you approve and ends as a PR that passes CI a
 3. Pick the agent per thread. Models can be switched mid-thread; note in the PR when that happened.
 4. Merge in task order. A task whose "After" task is not merged yet waits, even if its thread finished.
 5. Run threads in parallel only when their tasks touch different crates. Two threads in one crate will conflict.
+6. An orchestrator thread can run the stages of a task. It passes your answers and grants to a sub-agent thread (a design sub-agent for a spec, an implementation sub-agent for the work), runs the council's rounds, and brings each round's findings back to the sub-agent.
+7. When an agent hits its usage limit, the thread can go on in another agent with the same model, such as Cursor with Claude Opus 5.5 in place of Claude Code. A council slot is filled the same way. The PR's "Agent and model" section says when the limit hit and which commits each agent wrote.
 
 T3 Code's own README calls it "very very early" and says to expect bugs. Specs, tests and CI all live in the repo, so if T3 Code gets in the way, the same loop runs from Claude Code or Codex directly.
 
 ## First tasks
 
-These are the tasks for Phases 0 and 1, in order. Later phases get their task lists when Phase 1's gate passes, because what agents learn in Phase 1 will change how the later tasks are cut.
+These are the tasks for Phases 0 and 1 and their follow-ups, in order. T-006 records the rope baseline Phase 1's gate asks for. T-110, T-111, T-112 and T-114 came out of Phase 1's own work. Later phases get their task lists when Phase 1's gate passes, because what agents learn in Phase 1 will change how the later tasks are cut.
 
 | ID | Task | Crate | PRD | After |
 | --- | --- | --- | --- | --- |
@@ -134,6 +152,7 @@ These are the tasks for Phases 0 and 1, in order. Later phases get their task li
 | T-003 | Protected-paths check: CI fails a PR that edits a spec's tests or a budget threshold unless you add an approval label | repo | none | T-002 |
 | T-004 | `AGENTS.md`, a `CLAUDE.md` that points to it, `tasks/TEMPLATE.md` and a PR template that asks for PRD IDs | repo | none | T-001 |
 | T-005 | Benchmark harness with `criterion` and a CI job that compares each PR with its base commit | helm-bench | NF-7 | T-002 |
+| T-006 | Keep main's benchmark numbers past the artifact's 90 days | helm-bench | NF-7 | T-005 |
 | T-101 | Buffer trait over ropey, with byte, char, line and UTF-16 offset conversions | helm-text | NF-7 | T-005 |
 | T-102 | Transactions with undo and redo, including one transaction across several buffers | helm-text | ED-2 | T-101 |
 | T-103 | Cheap snapshots tagged with a buffer version, and a stress test of concurrent readers | helm-text | NF-9 | T-101 |
@@ -143,6 +162,12 @@ These are the tasks for Phases 0 and 1, in order. Later phases get their task li
 | T-107 | VS Code bindings for every editing command so far | helm-editor | ED-4 | T-106 |
 | T-108 | Vim normal, insert and visual modes, with motions, operators and counts | helm-editor | ED-5 | T-106 |
 | T-109 | Vim text objects, registers, `.` repeat and the `:w` `:q` `:e` commands | helm-editor | ED-5 | T-108 |
+| T-110 | Amend a transaction, so a run of keystrokes undoes in one step | helm-text | ED-2 | T-102, T-103 |
+| T-111 | Fix the open council findings on T-108 | helm-editor | ED-5, NF-1 | T-108 |
+| T-112 | Group VS Code typing into undo steps | helm-editor | ED-2, ED-4 | T-109 |
+| T-114 | Follow up Khakha's answers to PR #42's open questions | helm-editor | ED-5, NF-1 | T-109 |
+
+Every task in the table is done except T-112, which is planned.
 
 T-001 to T-004 have no product behavior to test, so their acceptance is that CI runs and fails a deliberately broken PR. From T-005 on, every task starts with its tests.
 

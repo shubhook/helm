@@ -62,18 +62,25 @@ Only `helm-ui` may use GPUI or know that a window exists. Nothing below `helm-ui
 - Every `unsafe` block gets a `// SAFETY:` comment explaining why it is sound.
 - Never add or remove the `approved-protected` label. Only Khakha does. CI fails a PR that changes a protected path (listed in `.github/protected-paths.txt`) unless the PR has that label.
 - The UI thread never blocks (NF-9). Parsing, LSP traffic, search, git, file IO and agent traffic run on workers against snapshots.
+- An edit to a protected file that the task file doesn't allow needs Khakha's written grant. Quote the grant word for word in the PR description, and make only the change it names. The `approved-protected` label grants nothing by itself. If a grant would need an assertion to change that it doesn't name, stop and ask.
+- Don't read another editor's Vim emulation. Vim behaviour comes from the task file, Vim's `:help` and running Vim itself. Name what you used in the PR description.
+- Report every benchmark number with where it came from. A CI number comes from the bench job's artifact or summary, with the run. A number from your machine is labelled local, and it never stands in for a CI number. Say whether each number is a criterion mean or `bench-compare`'s fastest of three medians.
+- Refresh `crates/helm-bench/baselines/main.toml` only with `crates/helm-bench/baselines/refresh.sh <full sha>`, from a main commit whose `bench-record` artifact hasn't expired. Never edit it by hand or put a local number in it. No check reads it, and no PR is compared with it.
 
 ## Commands
 
-Run all of these before marking a PR ready. CI runs the same ones.
+Run all of these before marking a PR ready. CI runs the rest, as `.github/workflows/ci.yml` lists them.
 
 ```sh
-cargo build --workspace
-cargo test --workspace
-cargo fmt --all --check        # cargo fmt has no --workspace flag; --all is its equivalent
-cargo clippy --workspace --all-targets -- -D warnings
-cargo bench -p helm-bench      # benchmarks; budgets are in crates/helm-bench/budgets.toml
+cargo build --workspace                                         # local only; CI has no separate build step
+cargo test --workspace --locked
+cargo fmt --all --check                                         # cargo fmt has no --workspace flag; --all is its equivalent
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo deny --all-features --locked check                        # licenses, advisories, bans and sources, from deny.toml
+cargo bench -p helm-bench --locked                              # benchmarks; budgets are in crates/helm-bench/budgets.toml
 ```
+
+CI runs the benchmarks on the PR's base commit and on its head, alternating for three rounds on one runner, and `bench-compare` checks the fastest of each side's three medians against `budgets.toml`. A local `cargo bench` run only shows that the benchmarks build and run.
 
 ## Commit messages
 
