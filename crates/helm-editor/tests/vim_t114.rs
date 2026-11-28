@@ -199,6 +199,12 @@ fn di_paren_deletes(marked: &str) -> bool {
     v.text().len() != before
 }
 
+// The `k` ranges in the next three tests (940..1030 and 330..420) are
+// tuned to where ropey puts chunk boundaries in these texts today. If
+// helm-text's chunking changes, the tests still pass but may no longer
+// put a chunk boundary 1 to 3 bytes inside the window. The `é` and `中`
+// tests after them don't depend on chunks.
+
 #[test]
 fn a_bracket_just_before_the_window_never_counts() {
     // The `(` is one byte before the window's first byte. The `x`s move

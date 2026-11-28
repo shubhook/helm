@@ -300,7 +300,7 @@ fn word(
 
 /// How far a bracket object reads from where its scan starts, each way
 /// (T-114): 1 MiB. A pair with a bracket further away counts as no pair.
-pub(crate) const PAIR_SCAN: usize = 1 << 20;
+const PAIR_SCAN: usize = 1 << 20;
 
 /// The text a bracket scan from `p` may read: from `p - PAIR_SCAN` up to,
 /// not including, `p + PAIR_SCAN`.
