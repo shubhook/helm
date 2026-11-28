@@ -1004,6 +1004,9 @@ impl Editor {
                     o::span(buffer, &mut reads, cursor, object, count)
                         .filter(|span| !matches!(span, Span::Chars(r) if r.is_empty()))
                         .map(|span| o::visual_ends(buffer, &mut reads, &span))
+                } else if matches!(object.kind, o::Kind::Pair { .. }) {
+                    let ends = (anchor.min(cursor), anchor.max(cursor));
+                    o::grow_pair(buffer, &mut reads, ends, object, count)
                 } else if matches!(object.kind, o::Kind::Word { .. }) && cursor > anchor {
                     let from = o::after(buffer, &mut reads, cursor);
                     o::word_from(buffer, &mut reads, from, object, count).map(|span| {
