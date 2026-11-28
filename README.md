@@ -20,6 +20,7 @@ Phase 1 (headless core) is code-complete: every task below is merged to main, an
 - T-109 Vim text objects, registers, repeat and commands — done
 - T-110 Amend a transaction, so a run of keystrokes undoes in one step — done
 - T-111 Fix the open council findings on T-108 — done
+- T-114 Follow up Khakha's answers to PR #42's open questions — done
 
 ## Crates
 
