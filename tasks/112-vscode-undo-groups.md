@@ -2,7 +2,7 @@
 
 After: T-109. This task waits until that one is merged. It is, as PR #42, and so are T-108 and T-110, which this task builds on, and T-114 (PR #45), which also changed `helm-editor`. This spec is written against main at `3566348`.
 
-**Questions 1 to 4 under "Open questions for Khakha" block the implementation.** The tests pin an answer to each that VS Code's documentation doesn't settle. Questions 5 to 7 have a default the implementation follows unless Khakha says otherwise.
+**The open questions are answered.** Khakha kept the spec's choice on all seven, so the interface and the tests stand as written and the implementation can start. See "Open questions for Khakha".
 
 ## Goal
 
@@ -148,7 +148,7 @@ As in T-101 to T-109, the implementation PR adds the benchmark file. The spec PR
 
 ## Out of scope
 
-- Word-by-word steps for typed spaces: open question 5.
+- Word-by-word steps for typed spaces: a later task, per Khakha's answer 5.
 - `cursorUndo` (`cmd-u`) and undoing selection changes on their own, as T-105 left them: a later task.
 - The paste, cut and copy commands and the clipboard (ED-1): a later task. It must follow the paste rule above.
 - Auto-closing brackets, electric characters and auto-indent, which VS Code groups by their own rules: later, with SY-3.
@@ -160,12 +160,24 @@ As in T-101 to T-109, the implementation PR adds the benchmark file. The spec PR
 
 ## Open questions for Khakha
 
-Questions 1 to 4 block the implementation. Each rule is a Helm proposal that VS Code's documentation doesn't settle, and the tests pin it, so a different answer changes the tests before anyone implements them. Questions 5 to 7 don't block: the spec states a default for each, and the implementation follows it unless Khakha says otherwise.
+Questions 1 to 4 blocked the implementation, and questions 5 to 7 had defaults. Khakha answered all seven on PR #46 and kept the spec's choice on each, so nothing in the interface or the tests changes.
 
-1. **Keep the pause rule, and at what length? (blocking)** VS Code's docs describe no pause, and its cursor code has no timer for undo. I propose one second as a Helm rule, long enough that ordinary typing never splits. A different length changes only `TYPING_PAUSE`, since the tests name the constant. Dropping the rule removes `set_time`, the pause tests in both test files, and the waits in the properties.
-2. **Should every move end the step? (blocking)** VS Code's cursor controller doesn't reset on a move in the files I read, so VS Code may join `ab`, Left, `c`. I propose that every move ends the step, since the brief lists it and it gives the same result for a mouse click as for an arrow key.
-3. **Enter starts a step, and typing after it joins. (blocking)** This matches VS Code's source. The other choices are Enter as its own step, or Enter joining the typing before it.
-4. **The keymap carries the grouping, and the dispatcher applies it. (blocking)** The other choice is `helm-ui` calling `set_undo_grouping` after each switch. That keeps `Keymap` and `Dispatcher` as they are, but adds a second rule for `helm-ui` beside T-108's, and `vscode_undo.rs` would change.
-5. **Word-by-word steps. (default: a later task)** Include VS Code's apparent space rule, where `hello world` undoes `" world"` first, in this task, in a later one, or not at all? I couldn't confirm it from the docs or from the parts of the source I read in full.
-6. **An edit with nothing to do keeps the step. (default: as specified)** VS Code may record the type of a delete that deleted nothing. I couldn't tell from the source. I propose keeping the step, which follows Helm's rule that a command with nothing to do changes nothing. A different answer changes one test.
-7. **`TYPING_PAUSE` as a public constant. (default: a constant)** Tests need to name it. If ST-1 will make it a setting, it could be a field on `Typing` grouping instead. That means `UndoGrouping::Typing { pause }` and a different `Keymap` API.
+Khakha's answers, as written:
+
+> 1. Keep the pause rule. TYPING_PAUSE is 1 s.
+> 2. Yes, every cursor move ends the open undo step.
+> 3. Yes, Enter starts a new step, and typing right after it joins that step.
+> 4. Yes, the keymap carries the grouping, and the dispatcher applies it. helm-ui does not set it after each switch.
+> 5. Word-by-word steps go to a later task.
+> 6. An edit with nothing to do keeps the open step, as specified.
+> 7. TYPING_PAUSE stays a constant.
+
+The questions as asked:
+
+1. **Keep the pause rule, and at what length? (answered: kept, 1 s)** VS Code's docs describe no pause, and its cursor code has no timer for undo. I propose one second as a Helm rule, long enough that ordinary typing never splits. A different length changes only `TYPING_PAUSE`, since the tests name the constant. Dropping the rule removes `set_time`, the pause tests in both test files, and the waits in the properties.
+2. **Should every move end the step? (answered: yes)** VS Code's cursor controller doesn't reset on a move in the files I read, so VS Code may join `ab`, Left, `c`. I propose that every move ends the step, since the brief lists it and it gives the same result for a mouse click as for an arrow key.
+3. **Enter starts a step, and typing after it joins. (answered: yes)** This matches VS Code's source. The other choices are Enter as its own step, or Enter joining the typing before it.
+4. **The keymap carries the grouping, and the dispatcher applies it. (answered: yes)** The other choice is `helm-ui` calling `set_undo_grouping` after each switch. That keeps `Keymap` and `Dispatcher` as they are, but adds a second rule for `helm-ui` beside T-108's, and `vscode_undo.rs` would change.
+5. **Word-by-word steps. (answered: a later task)** Include VS Code's apparent space rule, where `hello world` undoes `" world"` first, in this task, in a later one, or not at all? I couldn't confirm it from the docs or from the parts of the source I read in full.
+6. **An edit with nothing to do keeps the step. (answered: as specified)** VS Code may record the type of a delete that deleted nothing. I couldn't tell from the source. I propose keeping the step, which follows Helm's rule that a command with nothing to do changes nothing. A different answer changes one test.
+7. **`TYPING_PAUSE` as a public constant. (answered: a constant)** Tests need to name it. If ST-1 will make it a setting, it could be a field on `Typing` grouping instead. That means `UndoGrouping::Typing { pause }` and a different `Keymap` API.
