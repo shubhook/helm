@@ -185,3 +185,11 @@ fn an_empty_line_inside_a_block_is_its_inner_object() {
         ("|(\n  \n)", "di(", "(\n|)"),
     ]);
 }
+
+#[test]
+fn linewise_text_over_chars_goes_on_its_own_line() {
+    table(&[
+        ("|x\nab", "yyjvp", "x\n\n|x\nb"),
+        ("|x\r\nab", "yyjvp", "x\r\n\r\n|x\r\nb"),
+    ]);
+}

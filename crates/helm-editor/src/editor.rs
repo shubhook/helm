@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 
 use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
@@ -159,23 +159,43 @@ pub struct Editor {
     group: Option<Option<TransactionId>>,
 }
 
-/// An [`Editor`]'s identity within the process (T-109). Vim's `.` record
-/// belongs to the editor that made it, not to its buffer, since two
-/// editors can show one buffer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct EditorId(u64);
+/// An [`Editor`]'s identity (T-109). Vim's `.` record belongs to the
+/// editor that made it, not to its buffer, since two editors can show one
+/// buffer.
+///
+/// The editor owns the only strong reference. A [`Session`](crate::Session)
+/// keeps a [`Weak`] one with each open record, so it can tell which editor
+/// a record belongs to and, once that editor is dropped, that nobody will
+/// finish the record. The allocation outlives the editor while any weak
+/// reference does, so its address is never reused for another editor while
+/// a record still points at it.
+#[derive(Clone, Debug)]
+pub(crate) struct EditorId(Arc<()>);
 
 impl EditorId {
-    /// A new identity, never handed out before in this process.
+    /// A new identity.
     fn next() -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+        Self(Arc::new(()))
+    }
+
+    /// A weak reference to this identity, for a record to keep.
+    pub(crate) fn weak(&self) -> Weak<()> {
+        Arc::downgrade(&self.0)
+    }
+
+    /// Whether `weak` is a reference to this identity.
+    pub(crate) fn is(&self, weak: &Weak<()>) -> bool {
+        std::ptr::eq(Weak::as_ptr(weak), Arc::as_ptr(&self.0))
     }
 }
 
 impl Clone for Editor {
     /// A copy with the same selections, history and undo group, and an
-    /// identity of its own: it is another view.
+    /// identity of its own: it is another view. A Vim change still being
+    /// recorded belongs to the original, so a copy made in the middle of
+    /// typing keeps the open undo group but not the record. Its Escape
+    /// doesn't repeat a counted insert, and `.` still repeats the last
+    /// change the session finished.
     fn clone(&self) -> Self {
         Self {
             id: EditorId::next(),
@@ -225,8 +245,8 @@ impl Editor {
     }
 
     /// This editor's identity (T-109).
-    pub(crate) fn id(&self) -> EditorId {
-        self.id
+    pub(crate) fn id(&self) -> &EditorId {
+        &self.id
     }
 
     /// The buffer this editor edits.

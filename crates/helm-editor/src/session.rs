@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use crate::Invocation;
 use crate::editor::EditorId;
@@ -122,11 +122,11 @@ pub struct Session {
     clipboard: Option<String>,
 }
 
-/// A change being recorded: the editor it runs on, and its invocations so
-/// far.
+/// A change being recorded: a weak reference to the editor it runs on, and
+/// its invocations so far.
 #[derive(Clone, Debug)]
 struct Recording {
-    editor: EditorId,
+    editor: Weak<()>,
     invocations: Vec<Invocation>,
 }
 
@@ -264,25 +264,30 @@ impl Session {
     }
 
     /// Before `editor` runs a command: ends its record if its undo group
-    /// closed since its last run, making the record the last change.
-    pub(crate) fn end_closed_record(&mut self, editor: EditorId, in_group: bool) {
+    /// closed since its last run, making the record the last change. Also
+    /// drops every record whose editor no longer exists, since nothing can
+    /// finish it: an editor closed while typing leaves its change
+    /// unfinished, and the last change stays the one before.
+    pub(crate) fn end_closed_record(&mut self, editor: &EditorId, in_group: bool) {
         if !in_group {
             self.finish_record(editor);
         }
+        self.recordings
+            .retain(|recording| recording.editor.strong_count() > 0);
     }
 
     /// Whether a record is open on `editor`.
-    pub(crate) fn is_recording(&self, editor: EditorId) -> bool {
-        self.recordings.iter().any(|r| r.editor == editor)
+    pub(crate) fn is_recording(&self, editor: &EditorId) -> bool {
+        self.recordings.iter().any(|r| editor.is(&r.editor))
     }
 
     /// Adds `invocation` to the record open on `editor`, or starts a new
     /// record there with it. Records open on other editors stay open.
-    pub(crate) fn record(&mut self, editor: EditorId, invocation: &Invocation) {
-        match self.recordings.iter_mut().find(|r| r.editor == editor) {
+    pub(crate) fn record(&mut self, editor: &EditorId, invocation: &Invocation) {
+        match self.recordings.iter_mut().find(|r| editor.is(&r.editor)) {
             Some(recording) => recording.invocations.push(invocation.clone()),
             None => self.recordings.push(Recording {
-                editor,
+                editor: editor.weak(),
                 invocations: vec![invocation.clone()],
             }),
         }
@@ -290,8 +295,8 @@ impl Session {
 
     /// Takes back the last invocation recorded on `editor`, after it
     /// failed, dropping the record if that was all it held.
-    pub(crate) fn unrecord(&mut self, editor: EditorId) {
-        if let Some(i) = self.recordings.iter().position(|r| r.editor == editor) {
+    pub(crate) fn unrecord(&mut self, editor: &EditorId) {
+        if let Some(i) = self.recordings.iter().position(|r| editor.is(&r.editor)) {
             let recording = &mut self.recordings[i];
             recording.invocations.pop();
             if recording.invocations.is_empty() {
@@ -301,19 +306,25 @@ impl Session {
     }
 
     /// Makes the record open on `editor`, if any, the last change.
-    pub(crate) fn finish_record(&mut self, editor: EditorId) {
-        if let Some(i) = self.recordings.iter().position(|r| r.editor == editor) {
+    pub(crate) fn finish_record(&mut self, editor: &EditorId) {
+        if let Some(i) = self.recordings.iter().position(|r| editor.is(&r.editor)) {
             self.last_change = Some(self.recordings.swap_remove(i).invocations);
         }
     }
 
     /// The invocations recorded so far on `editor`, if a record is open
     /// there.
-    pub(crate) fn recorded(&self, editor: EditorId) -> Option<&[Invocation]> {
+    pub(crate) fn recorded(&self, editor: &EditorId) -> Option<&[Invocation]> {
         self.recordings
             .iter()
-            .find(|r| r.editor == editor)
+            .find(|r| editor.is(&r.editor))
             .map(|r| r.invocations.as_slice())
+    }
+
+    /// How many records are open, for tests.
+    #[cfg(test)]
+    pub(crate) fn open_records(&self) -> usize {
+        self.recordings.len()
     }
 }
 
@@ -359,5 +370,159 @@ fn append(old: Register, new: Register, newline: &str) -> Register {
     Register {
         pieces: old.into_iter().zip(new).map(|(a, b)| a + &b).collect(),
         linewise,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use helm_text::{Buffer, BufferSet, FileFormat, LineEndings};
+
+    use crate::{CommandRegistry, Editor, Invocation, Session, vim_commands as ids};
+
+    fn run(
+        registry: &CommandRegistry,
+        editor: &mut Editor,
+        set: &mut BufferSet,
+        session: &mut Session,
+        invocation: Invocation,
+    ) {
+        registry
+            .run_in(&invocation, editor, set, session)
+            .expect("the command runs");
+    }
+
+    fn counted(id: &str, count: usize) -> Invocation {
+        let mut invocation = Invocation::new(id);
+        invocation.args.count = Some(count);
+        invocation
+    }
+
+    #[test]
+    fn records_of_closed_editors_are_dropped() {
+        let registry = CommandRegistry::with_vim_commands();
+        let mut set = BufferSet::new();
+        let id = set.add(Buffer::from("ab\ncd"));
+        let format = FileFormat {
+            bom: false,
+            line_endings: LineEndings::count("ab\ncd"),
+        };
+        let mut session = Session::new();
+
+        // A live editor in the middle of a counted insert.
+        let mut live = Editor::new(id, format);
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            counted(ids::INSERT, 3),
+        );
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            Invocation::insert("x"),
+        );
+
+        // A hundred views that start typing and are closed, some after
+        // their group was closed from outside.
+        for i in 0..100 {
+            let mut view = Editor::new(id, format);
+            run(
+                &registry,
+                &mut view,
+                &mut set,
+                &mut session,
+                Invocation::new(ids::APPEND),
+            );
+            run(
+                &registry,
+                &mut view,
+                &mut set,
+                &mut session,
+                Invocation::insert("q"),
+            );
+            if i % 2 == 0 {
+                view.end_undo_group();
+            }
+        }
+        // Each view's own runs already dropped the records of views closed
+        // before it, so only the live record and the last view's are left.
+        assert_eq!(session.open_records(), 2);
+
+        // The live editor's next command drops the closed views' records
+        // and keeps its own, which still repeats its typing on Escape.
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            Invocation::insert("y"),
+        );
+        assert_eq!(session.open_records(), 1);
+        assert_eq!(session.last_change(), None);
+        run(
+            &registry,
+            &mut live,
+            &mut set,
+            &mut session,
+            Invocation::new(ids::NORMAL),
+        );
+        assert_eq!(session.open_records(), 0);
+        let change: Vec<&str> = session
+            .last_change()
+            .expect("the live editor's change")
+            .iter()
+            .map(|i| i.command.as_str())
+            .collect();
+        assert_eq!(
+            change,
+            [ids::INSERT, "editor.insert", "editor.insert", ids::NORMAL]
+        );
+        let text = set.get(id).expect("in the set").to_string();
+        assert!(text.starts_with("xyxyxy"), "{text:?}");
+    }
+
+    #[test]
+    fn a_completed_change_survives_closed_editors() {
+        let registry = CommandRegistry::with_vim_commands();
+        let mut set = BufferSet::new();
+        let id = set.add(Buffer::from("abc"));
+        let format = FileFormat {
+            bom: false,
+            line_endings: LineEndings::count("abc"),
+        };
+        let mut session = Session::new();
+        let mut a = Editor::new(id, format);
+        run(
+            &registry,
+            &mut a,
+            &mut set,
+            &mut session,
+            Invocation::new(ids::DELETE_CHAR),
+        );
+        {
+            let mut b = Editor::new(id, format);
+            run(
+                &registry,
+                &mut b,
+                &mut set,
+                &mut session,
+                Invocation::new(ids::INSERT),
+            );
+        }
+        run(
+            &registry,
+            &mut a,
+            &mut set,
+            &mut session,
+            Invocation::new(ids::RIGHT),
+        );
+        assert_eq!(session.open_records(), 0);
+        assert_eq!(
+            session.last_change().map(|c| c[0].command.as_str()),
+            Some(ids::DELETE_CHAR)
+        );
     }
 }

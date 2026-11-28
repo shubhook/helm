@@ -883,10 +883,14 @@ impl Editor {
                 } else {
                     // Below a last line with no line break: the break moves
                     // to the front.
-                    let (body, end) = split_break(&text);
+                    // The text's own bytes are moved in place, not copied.
+                    let mut text = text;
+                    let body = split_break(&text).0.len();
+                    let end: String = text.split_off(body);
+                    text.insert_str(0, &end);
                     Put {
                         range: len..len,
-                        text: format!("{end}{body}"),
+                        text,
                         cursor: (end.len(), true),
                     }
                 }
@@ -954,7 +958,11 @@ impl Editor {
                     }
                     (true, true) => (text, (0, true)),
                     // Linewise text over chars goes on its own line.
-                    (true, false) => (format!("{newline}{text}"), (newline.len(), true)),
+                    (true, false) => {
+                        let mut text = text;
+                        text.insert_str(0, newline);
+                        (text, (newline.len(), true))
+                    }
                     // Chars over lines get a line break after them.
                     (false, _) => {
                         let cursor = put_cursor(0, &text);

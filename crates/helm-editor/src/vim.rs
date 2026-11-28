@@ -529,7 +529,9 @@
 //!   every `CommandArgs` field. A change that leaves its undo group open
 //!   keeps every later invocation on that editor until the group closes,
 //!   Escape's `vim.normal` included. A group closed some other way ends the
-//!   record at that editor's next command, before it runs.
+//!   record at that editor's next command, before it runs. Each editor has
+//!   its own record, and the record of an editor that is dropped before it
+//!   finishes is dropped too, at the next command any editor runs.
 //! - `.` with a count replaces the first invocation's count, and the new
 //!   record keeps it. A first invocation naming register `1` to `8` uses the
 //!   next number (`:help redo-register`).
