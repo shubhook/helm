@@ -217,7 +217,7 @@ As in T-101 to T-108, the implementation PR adds the benchmark file. This spec P
 
 ## Open questions for Khakha
 
-Questions 1 and 2 blocked the implementation, and Khakha has answered both. Questions 3 to 8 don't block; Khakha kept the spec's default for each. After PR #42 merged, he answered question 6 again, with a 1 MiB cap (T-114); see question 6.
+Questions 1 and 2 blocked the implementation, and Khakha has answered both. Questions 3 to 8 don't block; Khakha kept the spec's default for each. After PR #42 merged, Khakha answered question 6 again, with a 1 MiB cap (T-114); see question 6.
 
 Khakha's answers, as written:
 
@@ -245,7 +245,7 @@ Khakha's answers, as written:
    Khakha kept the default: the two stay apart.
 6. **Bracket objects with no pair (default: unbounded, measured; answered: capped at 1 MiB).** In a 10 MB file the scan crosses the whole text, possibly past NF-1's 5 ms. `vim_objects/di_paren_no_pair_10mb` measures it. Keep it unbounded, as T-108 did for huge counts, or cap the scan (say 1 MB each way) and treat a capped scan as no pair?
 
-   Khakha first kept the default, and PR #42 merged with the scan unbounded. His answers to PR #42's open questions then capped it, as `tasks/114-t109-followups.md` quotes them: "Question 6 (no-pair bracket scan): cap the scan at 1 MiB in each direction from the cursor, and treat a capped scan as no pair. List it in vim.rs's 'Measured against Vim' as a difference." T-114 (PR #45) made the change.
+   Khakha first kept the default, and PR #42 merged with the scan unbounded. Khakha's answers to PR #42's open questions then capped it, as `tasks/114-t109-followups.md` quotes them: "Question 6 (no-pair bracket scan): cap the scan at 1 MiB in each direction from the cursor, and treat a capped scan as no pair. List it in vim.rs's 'Measured against Vim' as a difference." T-114 (PR #45) made the change.
 7. **The name `Session` (default: `Session`; answered: default kept).** It may be confused with agent sessions (AG-10). `EditorSession` is the alternative.
 
    Khakha kept the default: the name is `Session`.
