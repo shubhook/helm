@@ -190,3 +190,81 @@ fn linewise_p_below_a_last_line_with_no_crlf_puts_one() {
         ("a\r\n|b", "yyp", "a\r\nb\r\n|b"),
     ]);
 }
+
+/// Whether `di(` from `marked` changes the text.
+fn di_paren_deletes(marked: &str) -> bool {
+    let mut v = Vim::new(marked);
+    let before = v.text().len();
+    v.keys("di(");
+    v.text().len() != before
+}
+
+#[test]
+fn a_bracket_just_before_the_window_never_counts() {
+    // The `(` is one byte before the window's first byte. The `x`s move
+    // the rope's chunk boundaries past the window's start, 1 to 3 bytes
+    // in for some `k`, where a reader's 4-byte minimum read used to reach
+    // the `(`.
+    for k in 940..1030 {
+        let text = format!("{}({}|b)", "x".repeat(k), "a".repeat(MIB));
+        assert!(!di_paren_deletes(&text), "k = {k}");
+    }
+}
+
+#[test]
+fn a_bracket_at_the_windows_end_never_counts() {
+    // The `)` is at the window's end, the first byte it excludes.
+    for k in 330..420 {
+        let text = format!(
+            "{}(|b{}){}",
+            "x".repeat(k),
+            "a".repeat(MIB - 1),
+            "y".repeat(2000)
+        );
+        assert!(!di_paren_deletes(&text), "k = {k}");
+    }
+}
+
+#[test]
+fn a_visual_bracket_object_never_grows_past_the_window() {
+    for k in 940..1030 {
+        let text = format!("{}({}(|b))", "x".repeat(k), "a".repeat(MIB));
+        let mut v = Vim::new(&text);
+        v.keys("va(a(d");
+        // `va(` selects `(b)`, and `a(` finds no pair within the window.
+        assert_eq!(v.text().len(), k + MIB + 2, "k = {k}");
+    }
+}
+
+#[test]
+fn a_char_across_the_windows_end_doesnt_let_the_scan_past_it() {
+    // The window ends inside `é` or `中`, and `)` comes right after it.
+    for wide in ["é", "中"] {
+        let text = format!("(|b{}{wide})", "a".repeat(MIB - 2));
+        assert!(!di_paren_deletes(&text), "{wide}");
+        let text = format!("(|b{}{wide})", "a".repeat(MIB - 3));
+        assert!(!di_paren_deletes(&text), "{wide}, one byte in");
+    }
+    // A pair that fits stays a pair.
+    let text = format!("(|b{}é)", "a".repeat(MIB - 4));
+    assert!(di_paren_deletes(&text));
+}
+
+#[test]
+fn a_char_across_the_windows_start_doesnt_let_the_scan_past_it() {
+    // The window starts inside `é` or `中`, and `(` comes right before it.
+    for wide in ["é", "中"] {
+        for a in [MIB - 2, MIB - 1] {
+            let text = format!("({wide}{}|b)", "a".repeat(a));
+            assert!(!di_paren_deletes(&text), "{wide}, {a}");
+        }
+    }
+    // A pair that fits stays a pair.
+    let text = format!("(é{}|b)", "a".repeat(MIB - 3));
+    assert!(di_paren_deletes(&text));
+}
+
+#[test]
+fn a_backslash_ending_the_line_before_escapes_nothing() {
+    table(&[("a\\\n\"|b\"", "di\"", "a\\\n\"|\"")]);
+}

@@ -488,11 +488,12 @@
 //! `a` selects that pair, and `i` its inside, moving out one pair at a
 //! time while the inside lies within the selection and is more than one
 //! char. So `va(a(` and `vi(i(` grow to the next pair out. The selection
-//! then runs forward, from the pair's first char to its last. `ip` and `ap` switch to visual-line mode and the rest to
-//! visual mode, by the binding's `then_mode`, even when the object finds
-//! nothing; then the selection doesn't change. A visual end is never the
-//! line break of a line with text (T-108), so an object range that ends
-//! right after such a break selects up to the char before it.
+//! then runs forward, from the pair's first char to its last. `ip` and
+//! `ap` switch to visual-line mode and the rest to visual mode, by the
+//! binding's `then_mode`, even when the object finds nothing; then the
+//! selection doesn't change. A visual end is never the line break of a
+//! line with text (T-108), so an object range that ends right after such
+//! a break selects up to the char before it.
 //!
 //! # Registers (T-109)
 //!

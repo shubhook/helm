@@ -5,8 +5,8 @@
 //! Word objects read a window at a time from the cursor and stop at the
 //! line's ends. Quote objects read the cursor's line from its start.
 //! Bracket objects read outward from the cursor, at most 1 MiB each way,
-//! and use the line index only for the block rule at the end. Paragraph objects use a fixed
-//! number of line-index lookups per line they cross.
+//! and use the line index only for the block rule at the end. Paragraph
+//! objects use a fixed number of line-index lookups per line they cross.
 
 use std::cell::Cell;
 
@@ -370,7 +370,12 @@ fn find_pair(
         true
     });
     ahead.peek()?;
-    Some((o, ahead.offset()))
+    let c = ahead.offset();
+    // A reader reads at least 4 bytes per window, so it can read a few
+    // bytes past its limit, and a window ends on a char boundary. So check
+    // both brackets against the window here. Any pair further out is also
+    // outside it, so this never drops a pair inside the window.
+    (o >= floor && c < ceiling).then_some((o, c))
 }
 
 /// A bracket object from `p` with count `n`: the `n`th pair of `open` and
