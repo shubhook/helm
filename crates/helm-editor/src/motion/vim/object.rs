@@ -209,6 +209,15 @@ pub(crate) fn word_from(
     )
 }
 
+/// [`is_blank`], for the objects' backward reads. A function of its own
+/// makes `Backward::skip_while` a copy of its own here, so T-107's and
+/// T-108's motions keep theirs inlined as before T-109: when the objects
+/// shared it, LLVM stopped inlining it into `try_target`'s word motions on
+/// x86_64.
+fn blank_back(c: char) -> bool {
+    is_blank(c)
+}
+
 /// A char's class for the word objects: `None` for a line break, then 0
 /// for a blank, 2 for a word char and 1 for the rest. For WORDs every char
 /// that isn't a blank is 1.
@@ -284,7 +293,7 @@ fn word(
     // No white space after the last word: take the white space before the
     // first instead.
     let mut back = Backward::new(buffer, &mut reads.backward, start);
-    back.skip_while(is_blank);
+    back.skip_while(blank_back);
     Some(Span::Chars(back.offset()..end))
 }
 
@@ -356,7 +365,7 @@ fn pair(
     // So is the closing bracket's line when only blanks come before it.
     let mut end = c;
     let mut back = Backward::new(buffer, &mut reads.backward, c);
-    back.skip_while(is_blank);
+    back.skip_while(blank_back);
     let closes_a_line = back.offset() >= start && back.peek().is_some_and(is_break);
     if closes_a_line {
         end = left(&mut back);
@@ -444,7 +453,7 @@ fn quote(
         return Some(Span::Chars(o..end));
     }
     let mut back = Backward::new(buffer, &mut reads.backward, o);
-    back.skip_while(is_blank);
+    back.skip_while(blank_back);
     Some(Span::Chars(back.offset()..end))
 }
 
