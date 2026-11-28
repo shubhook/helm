@@ -2,7 +2,7 @@
 
 After: T-108. T-108 is merged (`4e92574`). This spec is written against main at `11010ce`, where Khakha's grants on PR #37 are in: the count is `CommandArgs::count`, Vim's motions are command ids with a crate-private enum, and `de` and `dE` at the end of the text delete the last char.
 
-**Open questions 1 and 2 are answered.** Khakha granted the `tests/commands.rs` edit (question 1) and chose option (a) for `tests/vim_keymap.rs` (question 2); see "Open questions for Khakha". The spec PR compiled without either edit, as "Crates and public interface" explains, and the implementation PR makes both.
+**Open questions 1 and 2 are answered.** Khakha granted the `tests/commands.rs` edit (question 1) and chose option (a) for `tests/vim_keymap.rs` (question 2); see "Open questions for Khakha". The spec PR compiled without either edit, as "Crates and public interface" explains, and the implementation PR makes both. Questions 3 to 8 are answered too; see the same section.
 
 ## Goal
 
@@ -114,7 +114,7 @@ Every new command keeps T-108's rules: read only the text near each cursor and t
 
 - `iw`, `aw`, `iW` and `aW`, with any count, read forward and back from the cursor a window at a time, with T-108's readers, and look at the line index only where they need a line's start or end. A count costs the text it crosses.
 - The quote objects read the cursor's line only, from its start, since the pairing counts from there. That is one `line_to_byte` lookup per cursor, plus the line up to the closing quote.
-- The bracket objects read outward from the cursor a window at a time and use no line-index lookups while they scan. The block rule for `i{` adds a fixed number of lookups at the end. They cost the text between the cursor and the pair they find. With no enclosing pair, that is the whole text on each side (open question 6).
+- The bracket objects read outward from the cursor a window at a time and use no line-index lookups while they scan. The block rule for `i{` adds a fixed number of lookups at the end. They cost the text between the cursor and the pair they find. With no enclosing pair, that is the whole text on each side (open question 6, answered: T-114 caps the scan at 1 MiB each way; see `tasks/114-t109-followups.md`).
 - `ip` and `ap` cost a fixed number of line-index lookups per line they cross, plus reading each crossed line up to its first non-blank to decide whether it is blank. A count costs the lines it crosses.
 - Linewise objects turn lines into bytes with a fixed number of line-index lookups per span, as T-108's linewise operators do.
 - `y` copies the yanked bytes and nothing else. It applies no transaction and doesn't change the buffer's version. `yy` with any count is a fixed number of line-index lookups per cursor.
@@ -135,10 +135,10 @@ Every new command keeps T-108's rules: read only the text near each cursor and t
 - **Register names by chord (`" a`) instead of reading the next key as an argument.** Khakha put the char-argument mechanism, which `f`, `t` and `r` need, in a later task. Chords cost 201 bindings, all data, and no new `KeyState` rule beyond holding the register. When the later task adds char arguments, it can replace the chords.
 - **The command line lives in `KeyState`, behind `Typing::Line`.** Then `:w<CR>` is a keystroke row in a table test, which is ED-5's acceptance format. A command line owned by `helm-ui` would put that out of reach.
 - **Pastes keep their bytes.** Converting line breaks to the file's format on paste would break ED-1's round trip, and Vim doesn't convert either.
-- **The unnamed register stays separate from the clipboard**, as in Vim with default options. See open question 5.
+- **The unnamed register stays separate from the clipboard**, as in Vim with default options. See open question 5, answered: kept apart.
 
 - **An object edit's undo cursor is the range's start.** T-108's undo puts back the cursors from before an edit, which for its motions is where the change began. For `ciw` from inside a word it isn't, and Vim puts the cursor at the word's start. So an object edit records a cursor at each range's start as its "before". T-108's pinned undo rows are all motions and keep passing.
-- **The tests reach the keymap and registry through one helper.** `tests/vim_harness/mod.rs` names `vim::keymap()` and `with_vim_commands()` once. That leaves open question 2 open: whichever way Khakha answers, one line changes. Nothing in this PR adds a T-109 id to `vim_commands::ALL`, a binding to `vim::keymap()` or a command to `with_vim_commands()`, since each would fail T-108's pinned tests now.
+- **The tests reach the keymap and registry through one helper.** `tests/vim_harness/mod.rs` names `vim::keymap()` and `with_vim_commands()` once. That leaves open question 2 open: whichever way Khakha answers, one line changes. Khakha has since answered it with option (a); see "How the two grants landed". Nothing in this PR adds a T-109 id to `vim_commands::ALL`, a binding to `vim::keymap()` or a command to `with_vim_commands()`, since each would fail T-108's pinned tests now.
 
 ## Acceptance tests
 
@@ -173,7 +173,7 @@ I ran every table row of `vim_objects.rs`, `vim_registers.rs` and `vim_repeat.rs
 
 - `d5iw` past the end of the line: nothing happens in both, but Vim moves the cursor to the last char it reached. Helm leaves it.
 - `ci(` with no pair: Vim stays in normal mode, so the typed `X` runs as a command. Helm enters insert mode, as T-108's `cj` on the last line does (T-108's open question 5, kept by Khakha).
-- `xvld.` and `xVjd.`: Vim repeats the visual delete; Helm repeats the `x` before it (open question 4).
+- `xvld.` and `xVjd.`: Vim repeats the visual delete; Helm repeats the `x` before it (open question 4, answered: kept out of T-109).
 
 Two rows I first wrote wrong (`d2i"` and `Ox<esc>j.`) now pin what Vim does. A small Python script in my scratch directory drove Vim; neither it nor its output is in the PR.
 
@@ -197,7 +197,7 @@ NF-1 gives a keypress 5 ms from input to pixel. As in T-108, these benchmarks ti
 
 Each iteration ends where it began: `u` puts back the cursors from before the edit, and `yy` changes nothing. Build the text, set, registry, dispatcher, session and events once, outside the timed code, and pass each result through `black_box`.
 
-No benchmark has a fixed target. Khakha's answer 7 on PR #37 kept fixed targets as ungated review aids and gated new benchmarks by the 5% default only, and I have no CI baseline for any of these paths yet. If Khakha wants one, it will be a criterion mean on the CI `ubuntu-latest` `bench` job, ungated, with its evidence stated as T-108's were (open question 8). `di_paren_no_pair_10mb` is there to measure the worst case behind open question 6.
+No benchmark has a fixed target. Khakha's answer 7 on PR #37 kept fixed targets as ungated review aids and gated new benchmarks by the 5% default only, and I have no CI baseline for any of these paths yet. If Khakha wants one, it will be a criterion mean on the CI `ubuntu-latest` `bench` job, ungated, with its evidence stated as T-108's were (open question 8, answered: no targets, the spec's default). `di_paren_no_pair_10mb` is there to measure the worst case behind open question 6, which T-114 answered with a 1 MiB cap.
 
 Budget: the default 5% from `budgets.toml`, with no per-benchmark override. The base commit has no `vim_objects` benchmarks, so `bench-compare` reports them as head-only in this task's PR and gates them from the next PR on. This task changes `resolve` (a pending register and a line), adds 391 bindings to Vim's keymap, and records every run while a change is open. So T-108's three `vim/` targets stay ungated review aids, reported from the artifact, and every `vim/`, `keymap/`, `cursor/` and `editor/` benchmark must not get more than 5% slower.
 
@@ -209,7 +209,7 @@ As in T-101 to T-108, the implementation PR adds the benchmark file. This spec P
 - Other text objects: sentences (`is`, `as`), tags (`it`, `at`), and objects from language servers or tree-sitter.
 - Other registers: `.`, `:`, `%`, `#`, `/`, `=`, and `ctrl-r` in insert mode. `:registers`.
 - `gp`, `gP`, `]p`, visual block mode, and blockwise registers.
-- `.` after a visual change (open question 4).
+- `.` after a visual change (open question 4, answered: kept out of T-109).
 - `:` commands other than the table above, ranges, `:x`, `ZZ` and `ZQ`, command-line history, completion and editing keys beyond Backspace, and `:` from a visual mode.
 - Where a relative path is resolved, and how a failed request is shown: `helm-ui`.
 - Linking the unnamed register to the clipboard (`clipboard=unnamed`): a setting for a later task.
@@ -217,7 +217,7 @@ As in T-101 to T-108, the implementation PR adds the benchmark file. This spec P
 
 ## Open questions for Khakha
 
-Questions 1 and 2 blocked the implementation, and Khakha has answered both. Questions 3 to 8 don't block; Khakha kept the spec's default for each.
+Questions 1 and 2 blocked the implementation, and Khakha has answered both. Questions 3 to 8 don't block; Khakha kept the spec's default for each. After PR #42 merged, Khakha answered question 6 again, with a 1 MiB cap (T-114); see question 6.
 
 Khakha's answers, as written:
 
@@ -234,9 +234,21 @@ Khakha's answers, as written:
    - (b) No test edits: `vim::keymap()`, `ALL` and `with_vim_commands()` keep T-108's contents, and T-109 adds a second keymap function, a second id list and a fourth registry constructor for `helm-ui`. Every later Vim task would add another layer.
 
    Khakha chose (a): `ALL` is 107 ids, `with_vim_commands()` 143 commands, and `vim::keymap()` eight modes and 506 bindings, T-108's 115 rows first and unchanged.
-3. **Request shape (default: as stubbed).** `Save`, `Close`, `Open` and `SetClipboard`, with `PathBuf` paths and a `force` flag, and `:q` closing the editor while `helm-ui` decides about the window.
-4. **`.` after a visual change (default: out of T-109).** Vim repeats it over the same amount of text from the cursor (`:help visual-repeat`). Include it now, or a later task?
-5. **Unnamed register and the clipboard (default: kept apart).** As in Vim by default; `clipboard=unnamed` would be a later setting.
-6. **Bracket objects with no pair (default: unbounded, measured).** In a 10 MB file the scan crosses the whole text, possibly past NF-1's 5 ms. `vim_objects/di_paren_no_pair_10mb` measures it. Keep it unbounded, as T-108 did for huge counts, or cap the scan (say 1 MB each way) and treat a capped scan as no pair?
-7. **The name `Session` (default: `Session`).** It may be confused with agent sessions (AG-10). `EditorSession` is the alternative.
-8. **Speed targets (default: none).** Do you want ungated review-aid targets for any of the nine benchmarks, as criterion means on the CI `ubuntu-latest` bench job, once main's bench baseline holds the `vim/` group?
+3. **Request shape (default: as stubbed; answered: default kept).** `Save`, `Close`, `Open` and `SetClipboard`, with `PathBuf` paths and a `force` flag, and `:q` closing the editor while `helm-ui` decides about the window.
+
+   Khakha kept the default ("Questions 3 to 8: keep the spec's defaults", above).
+4. **`.` after a visual change (default: out of T-109; answered: default kept).** Vim repeats it over the same amount of text from the cursor (`:help visual-repeat`). Include it now, or a later task?
+
+   Khakha kept the default: it stays out of T-109.
+5. **Unnamed register and the clipboard (default: kept apart; answered: default kept).** As in Vim by default; `clipboard=unnamed` would be a later setting.
+
+   Khakha kept the default: the two stay apart.
+6. **Bracket objects with no pair (default: unbounded, measured; answered: capped at 1 MiB).** In a 10 MB file the scan crosses the whole text, possibly past NF-1's 5 ms. `vim_objects/di_paren_no_pair_10mb` measures it. Keep it unbounded, as T-108 did for huge counts, or cap the scan (say 1 MB each way) and treat a capped scan as no pair?
+
+   Khakha first kept the default, and PR #42 merged with the scan unbounded. Khakha's answers to PR #42's open questions then capped it, as `tasks/114-t109-followups.md` quotes them: "Question 6 (no-pair bracket scan): cap the scan at 1 MiB in each direction from the cursor, and treat a capped scan as no pair. List it in vim.rs's 'Measured against Vim' as a difference." T-114 (PR #45) made the change.
+7. **The name `Session` (default: `Session`; answered: default kept).** It may be confused with agent sessions (AG-10). `EditorSession` is the alternative.
+
+   Khakha kept the default: the name is `Session`.
+8. **Speed targets (default: none; answered: default kept).** Do you want ungated review-aid targets for any of the nine benchmarks, as criterion means on the CI `ubuntu-latest` bench job, once main's bench baseline holds the `vim/` group?
+
+   Khakha kept the default: the nine benchmarks have no targets.
