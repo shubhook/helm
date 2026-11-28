@@ -20,6 +20,13 @@ Crates: <!-- the only crates this task may touch -->
 
 <!-- The public types, traits and functions this task adds or changes, as signatures. -->
 
+## Choices made and rejected
+
+<!--
+Each choice the spec makes where another was possible: what it picks,
+what it rejects, and why. Write "none" if none.
+-->
+
 ## Acceptance tests
 
 <!--
@@ -34,3 +41,11 @@ List each test file and what it proves. Agents don't edit these files.
 ## Out of scope
 
 <!-- What this task does not do, and which later task does it if known. -->
+
+## Open questions for Khakha
+
+<!--
+Numbered. Each says the default the spec takes, and whether it blocks the
+implementation. When Khakha answers, quote the answer here as written and
+mark the question answered. Write "none" if none.
+-->
