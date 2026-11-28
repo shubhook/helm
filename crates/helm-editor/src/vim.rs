@@ -412,7 +412,9 @@
 //! only: a word object never crosses a line break. `iw` is the run under
 //! the cursor, white space included, and `n` takes `n` runs. `aw` is the
 //! word and the white space after it; on white space, the white space and
-//! the word after it. If there is no white space after (a line break or the
+//! the word after it, `n` times; a word with no white space before it
+//! counts on its own, so `d2aw` on white space before `foo.bar` deletes the
+//! white space, `foo` and `.`. If there is no white space after (a line break or the
 //! end of the text follows), it takes the white space before the word
 //! instead. `n` takes `n` words. A count that runs past the end of the
 //! line finds nothing (Vim also moves the cursor there; Helm leaves it).
@@ -426,8 +428,9 @@
 //! (the line break before those blanks is left out too, so the brackets
 //! keep their lines). When both are left out, `i` is linewise over the
 //! lines between, so `di{` on a block of lines leaves `{` and `}` on their
-//! own lines and `ci{` leaves one empty line to type in. An empty `i` finds
-//! nothing. All measured in Vim 9.1.
+//! own lines and `ci{` leaves one empty line to type in. When both are left
+//! out and one empty line is between them, `i` is that line. Any other
+//! empty `i` finds nothing. All measured in Vim 9.1.
 //!
 //! **Quotes.** Only within the cursor's line. A quote right after a
 //! backslash doesn't count. On a quote, its index among the line's quotes
@@ -505,7 +508,9 @@
 //! puts are one transaction. The bytes are the register's exactly: line
 //! breaks aren't converted, so ED-1's round trip keeps every byte. An empty
 //! register puts nothing, and visual `p` with one leaves visual mode and
-//! changes nothing. Linewise text over a charwise selection goes on its
+//! changes nothing. So does a put whose text, over all its cursors and its
+//! count, would be more than 1 GiB, such as `99999999999999999999p`: Vim
+//! refuses that with E1240, and Helm has no error to return for it. Linewise text over a charwise selection goes on its
 //! own line, and charwise text over lines gets a line break after it.
 //!
 //! # `.` repeat (T-109)

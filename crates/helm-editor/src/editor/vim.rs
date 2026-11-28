@@ -842,23 +842,26 @@ impl Editor {
         let mut reads = Reads::default();
         let (start, heads) = self.vim_start(buffer, &mut reads, settled_head);
         let newline = self.format.newline();
-        let texts = put_texts(register, heads.len(), count, newline.as_str());
+        let Some(texts) = put_texts(register, heads.len(), count, newline.as_str()) else {
+            // Too large to put: nothing changes but the clamped cursors.
+            self.selections = start;
+            return Ok(None);
+        };
         let len = buffer.len_bytes();
         let puts: Vec<Put> = heads
             .iter()
-            .enumerate()
-            .map(|(i, &p)| {
-                let text = &texts[i.min(texts.len() - 1)];
+            .zip(texts)
+            .map(|(&p, text)| {
                 if !register.linewise {
                     let at = if after {
                         m::after_char(buffer, &mut reads, p)
                     } else {
                         p
                     };
-                    let cursor = put_cursor(0, text);
+                    let cursor = put_cursor(0, &text);
                     return Put {
                         range: at..at,
-                        text: text.clone(),
+                        text,
                         cursor: (cursor, false),
                     };
                 }
@@ -868,19 +871,19 @@ impl Editor {
                     let at = m::line_start_of_line(buffer, line);
                     Put {
                         range: at..at,
-                        text: text.clone(),
+                        text,
                         cursor: (0, true),
                     }
                 } else if line + 1 < buffer.len_lines() {
                     Put {
                         range: next..next,
-                        text: text.clone(),
+                        text,
                         cursor: (0, true),
                     }
                 } else {
                     // Below a last line with no line break: the break moves
                     // to the front.
-                    let (body, end) = split_break(text);
+                    let (body, end) = split_break(&text);
                     Put {
                         range: len..len,
                         text: format!("{end}{body}"),
@@ -894,14 +897,16 @@ impl Editor {
 
     /// Visual `p` and `P` (T-109): replaces each selection, or with `lines`
     /// each selection's lines, with `register`, `count` times, in one
-    /// transaction, and returns what the selections held, as a register
-    /// holds it. With no register, each selection becomes a cursor on its
-    /// visual cursor char and nothing else changes.
+    /// transaction, and, unless `keep`, returns what the selections held,
+    /// as a register holds it. With no register, or one too large to put
+    /// `count` times (see [`MAX_PUT_BYTES`]), each selection becomes a
+    /// cursor on its visual cursor char and nothing else changes.
     pub(crate) fn vim_put_selections(
         &mut self,
         set: &mut BufferSet,
         register: Option<&Register>,
         lines: bool,
+        keep: bool,
         count: Option<usize>,
     ) -> Result<Option<Register>, EditorError> {
         let Some(register) = register else {
@@ -917,31 +922,46 @@ impl Editor {
             .iter()
             .map(|&(anchor, cursor)| visual_span(buffer, &mut reads, anchor, cursor, lines))
             .collect();
-        let replaced = taken(buffer, spans.iter(), newline);
-        let texts = put_texts(register, ends.len(), count, newline);
+        let Some(texts) = put_texts(register, ends.len(), count, newline) else {
+            self.vim_exit_visual(set)?;
+            return Ok(None);
+        };
+        // `P` keeps the registers, so it reads nothing for them.
+        let replaced = if keep {
+            None
+        } else {
+            taken(buffer, spans.iter(), newline)
+        };
         let puts: Vec<Put> = spans
             .iter()
-            .enumerate()
-            .map(|(i, span)| {
-                let text = &texts[i.min(texts.len() - 1)];
+            .zip(texts)
+            .map(|(span, text)| {
+                // A span of lines is replaced with its last line break,
+                // which is read on its own: at most two bytes.
                 let (range, ends_line) = match span {
-                    Span::Lines(a, b) => {
-                        let range = m::lines_range(buffer, *a, *b);
-                        let ended = m::copy(buffer, range.clone());
-                        let (_, end) = split_break(&ended);
-                        (range, end.to_owned())
-                    }
+                    Span::Lines(a, b) => (
+                        m::lines_range(buffer, *a, *b),
+                        m::line_break(buffer, &mut reads, *b),
+                    ),
                     Span::Chars(range) => (range.clone(), String::new()),
                 };
                 let (text, cursor) = match (register.linewise, lines) {
                     (true, true) if ends_line.is_empty() => {
-                        (split_break(text).0.to_owned(), (0, true))
+                        let body = split_break(&text).0.len();
+                        let mut text = text;
+                        text.truncate(body);
+                        (text, (0, true))
                     }
-                    (true, true) => (text.clone(), (0, true)),
+                    (true, true) => (text, (0, true)),
                     // Linewise text over chars goes on its own line.
                     (true, false) => (format!("{newline}{text}"), (newline.len(), true)),
                     // Chars over lines get a line break after them.
-                    (false, _) => (format!("{text}{ends_line}"), (put_cursor(0, text), false)),
+                    (false, _) => {
+                        let cursor = put_cursor(0, &text);
+                        let mut text = text;
+                        text.push_str(&ends_line);
+                        (text, (cursor, false))
+                    }
                 };
                 Put {
                     range,
@@ -1093,24 +1113,60 @@ fn visual_span(
     Span::Chars(from.min(to)..from.max(to))
 }
 
+/// The most bytes one put may insert, over all its cursors (T-109): 1 GiB.
+/// A put that would insert more, such as `99999999999999999999p`, puts
+/// nothing, as Vim refuses a put whose text is too long (E1240). Past this
+/// size the allocation alone would take seconds or fail.
+const MAX_PUT_BYTES: usize = 1 << 30;
+
 /// The text each of `cursors` cursors puts from `register`, `count` times
-/// over: its own piece when there are as many pieces as cursors, and
-/// otherwise every piece joined, as [`Register::text`] joins them. Holds
-/// one text when every cursor puts the same.
+/// over, one owned string per cursor: its own piece when there are as many
+/// pieces as cursors, and otherwise every piece joined, as
+/// [`Register::text`] joins them. `None` if all of it together would be
+/// more than [`MAX_PUT_BYTES`], or too large to count; then nothing is
+/// built.
 fn put_texts(
     register: &Register,
     cursors: usize,
     count: Option<usize>,
     newline: &str,
-) -> Vec<String> {
+) -> Option<Vec<String>> {
     let n = count.unwrap_or(1).max(1);
+    let fits = |total: Option<usize>| total.filter(|&total| total <= MAX_PUT_BYTES);
     if register.pieces.len() == cursors {
-        register
+        let total = register
             .pieces
             .iter()
-            .map(|piece| piece.repeat(n))
-            .collect()
-    } else {
-        vec![register.text(newline).repeat(n)]
+            .try_fold(0usize, |sum, piece| sum.checked_add(piece.len()));
+        fits(total.and_then(|total| total.checked_mul(n)))?;
+        return Some(
+            register
+                .pieces
+                .iter()
+                .map(|piece| piece.repeat(n))
+                .collect(),
+        );
     }
+    let joins = if register.linewise {
+        0
+    } else {
+        register.pieces.len().saturating_sub(1)
+    };
+    let one = register
+        .pieces
+        .iter()
+        .try_fold(0usize, |sum, piece| sum.checked_add(piece.len()))
+        .and_then(|sum| sum.checked_add(joins.checked_mul(newline.len())?));
+    fits(
+        one.and_then(|one| one.checked_mul(n))
+            .and_then(|each| each.checked_mul(cursors.max(1))),
+    )?;
+    let mut text = register.text(newline);
+    if n > 1 {
+        text = text.repeat(n);
+    }
+    // Every cursor but the last gets a copy; the last takes the text.
+    let mut texts = vec![text.clone(); cursors.saturating_sub(1)];
+    texts.push(text);
+    Some(texts)
 }

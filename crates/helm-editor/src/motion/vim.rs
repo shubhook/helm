@@ -776,6 +776,18 @@ pub(crate) fn lines_text(buffer: &Buffer, a: usize, b: usize, newline: &str) -> 
     text
 }
 
+/// Line `line`'s line break: `"\n"`, `"\r\n"` or `"\r"`, or empty on the
+/// last line. Reads at most two bytes.
+pub(crate) fn line_break(buffer: &Buffer, reads: &mut Reads, line: usize) -> String {
+    if line >= last_line(buffer) {
+        return String::new();
+    }
+    copy(
+        buffer,
+        line_text_end(buffer, reads, line)..line_start(buffer, line + 1),
+    )
+}
+
 /// The bytes lines `a` to `b` cover, their last line break included.
 pub(crate) fn lines_range(buffer: &Buffer, a: usize, b: usize) -> Range<usize> {
     let end = if b < last_line(buffer) {

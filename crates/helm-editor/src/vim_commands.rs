@@ -14,6 +14,7 @@
 //! [`CommandArgs::motion`]: crate::CommandArgs::motion
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::editor::{Entry, Operator, Target};
 use crate::motion::vim::VimMotion;
@@ -814,11 +815,10 @@ fn yank_selections(cx: CommandContext<'_>, lines: bool) -> Result<(), CommandErr
     Ok(())
 }
 
-/// The register the invocation names, or the unnamed one.
-fn named(cx: &CommandContext<'_>) -> Option<Register> {
-    cx.session
-        .register(cx.args.register.unwrap_or('"'))
-        .cloned()
+/// The register the invocation names, or the unnamed one. The session
+/// shares its copy, so a 1 MB clipboard register isn't copied here.
+fn named(cx: &CommandContext<'_>) -> Option<Arc<Register>> {
+    cx.session.shared(cx.args.register.unwrap_or('"'))
 }
 
 /// [`PUT_AFTER`] and [`PUT_BEFORE`].
@@ -833,9 +833,9 @@ fn put(cx: CommandContext<'_>, after: bool) -> Result<(), CommandError> {
 /// unless `keep`, writes what they held as a delete does.
 fn put_selections(cx: CommandContext<'_>, lines: bool, keep: bool) -> Result<(), CommandError> {
     let register = named(&cx);
-    let replaced = cx
-        .editor
-        .vim_put_selections(cx.set, register.as_ref(), lines, cx.args.count)?;
+    let replaced =
+        cx.editor
+            .vim_put_selections(cx.set, register.as_deref(), lines, keep, cx.args.count)?;
     if !keep {
         let newline = cx.editor.format().newline();
         if let Some(replaced) = replaced {
@@ -863,7 +863,7 @@ fn selects_object<const I: usize>(cx: CommandContext<'_>) -> Result<(), CommandE
 /// or `O`, first runs what was typed again, `n - 1` more times, inside the
 /// same undo group (T-109).
 fn leave_insert(cx: CommandContext<'_>) -> Result<(), CommandError> {
-    let typed = cx.session.recorded(cx.editor.buffer()).and_then(|record| {
+    let typed = cx.session.recorded(cx.editor.id()).and_then(|record| {
         let (first, rest) = record.split_first()?;
         let n = first.args.count.filter(|&n| n > 1)?;
         if !ENTRIES.contains(&first.command.as_str()) {

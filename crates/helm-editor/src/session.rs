@@ -5,9 +5,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use helm_text::BufferId;
-
 use crate::Invocation;
+use crate::editor::EditorId;
 
 /// What a register holds: one piece of text per cursor that wrote it, in
 /// selection order, and whether the text is whole lines.
@@ -116,17 +115,18 @@ pub struct Session {
     registers: BTreeMap<char, Arc<Register>>,
     /// The last change `.` repeats.
     last_change: Option<Vec<Invocation>>,
-    /// The change still being recorded, while its undo group is open.
-    recording: Option<Recording>,
+    /// The changes still being recorded, at most one per editor, each
+    /// while its editor's undo group is open.
+    recordings: Vec<Recording>,
     /// The text of the last [`Request::SetClipboard`] this session pushed.
     clipboard: Option<String>,
 }
 
-/// A change being recorded: the buffer of the editor it runs on, and its
-/// invocations so far.
+/// A change being recorded: the editor it runs on, and its invocations so
+/// far.
 #[derive(Clone, Debug)]
 struct Recording {
-    buffer: BufferId,
+    editor: EditorId,
     invocations: Vec<Invocation>,
 }
 
@@ -152,6 +152,11 @@ impl Session {
         self.registers
             .get(&stored_name(name)?)
             .map(|register| &**register)
+    }
+
+    /// [`register`](Self::register), as the session's shared copy.
+    pub(crate) fn shared(&self, name: char) -> Option<Arc<Register>> {
+        self.registers.get(&stored_name(name)?).cloned()
     }
 
     /// Tells the session the system clipboard now holds `text`, or nothing
@@ -258,71 +263,57 @@ impl Session {
         self.registers.insert('"', register);
     }
 
-    /// Before `editor` runs a command: ends a record on its buffer whose
-    /// undo group closed since the last run, making it the last change.
-    pub(crate) fn end_closed_record(&mut self, buffer: BufferId, in_group: bool) {
-        if !in_group
-            && self
-                .recording
-                .as_ref()
-                .is_some_and(|recording| recording.buffer == buffer)
-        {
-            self.finish_record();
+    /// Before `editor` runs a command: ends its record if its undo group
+    /// closed since its last run, making the record the last change.
+    pub(crate) fn end_closed_record(&mut self, editor: EditorId, in_group: bool) {
+        if !in_group {
+            self.finish_record(editor);
         }
     }
 
-    /// Whether a record is open on `buffer`.
-    pub(crate) fn is_recording(&self, buffer: BufferId) -> bool {
-        self.recording
-            .as_ref()
-            .is_some_and(|recording| recording.buffer == buffer)
+    /// Whether a record is open on `editor`.
+    pub(crate) fn is_recording(&self, editor: EditorId) -> bool {
+        self.recordings.iter().any(|r| r.editor == editor)
     }
 
-    /// Adds `invocation` to the record open on its editor's buffer, or
-    /// starts a new record on `buffer` with it. A record open on another
-    /// buffer becomes the last change first.
-    pub(crate) fn record(&mut self, buffer: BufferId, invocation: &Invocation) {
-        match &mut self.recording {
-            Some(recording) if recording.buffer == buffer => {
-                recording.invocations.push(invocation.clone());
-            }
-            _ => {
-                self.finish_record();
-                self.recording = Some(Recording {
-                    buffer,
-                    invocations: vec![invocation.clone()],
-                });
-            }
+    /// Adds `invocation` to the record open on `editor`, or starts a new
+    /// record there with it. Records open on other editors stay open.
+    pub(crate) fn record(&mut self, editor: EditorId, invocation: &Invocation) {
+        match self.recordings.iter_mut().find(|r| r.editor == editor) {
+            Some(recording) => recording.invocations.push(invocation.clone()),
+            None => self.recordings.push(Recording {
+                editor,
+                invocations: vec![invocation.clone()],
+            }),
         }
     }
 
-    /// Takes back the last invocation recorded on `buffer`, after it
+    /// Takes back the last invocation recorded on `editor`, after it
     /// failed, dropping the record if that was all it held.
-    pub(crate) fn unrecord(&mut self, buffer: BufferId) {
-        if let Some(recording) = &mut self.recording
-            && recording.buffer == buffer
-        {
+    pub(crate) fn unrecord(&mut self, editor: EditorId) {
+        if let Some(i) = self.recordings.iter().position(|r| r.editor == editor) {
+            let recording = &mut self.recordings[i];
             recording.invocations.pop();
             if recording.invocations.is_empty() {
-                self.recording = None;
+                self.recordings.swap_remove(i);
             }
         }
     }
 
-    /// Makes the open record, if any, the last change.
-    pub(crate) fn finish_record(&mut self) {
-        if let Some(recording) = self.recording.take() {
-            self.last_change = Some(recording.invocations);
+    /// Makes the record open on `editor`, if any, the last change.
+    pub(crate) fn finish_record(&mut self, editor: EditorId) {
+        if let Some(i) = self.recordings.iter().position(|r| r.editor == editor) {
+            self.last_change = Some(self.recordings.swap_remove(i).invocations);
         }
     }
 
-    /// The invocations recorded so far on `buffer`, if a record is open
+    /// The invocations recorded so far on `editor`, if a record is open
     /// there.
-    pub(crate) fn recorded(&self, buffer: BufferId) -> Option<&[Invocation]> {
-        self.recording
-            .as_ref()
-            .filter(|recording| recording.buffer == buffer)
-            .map(|recording| recording.invocations.as_slice())
+    pub(crate) fn recorded(&self, editor: EditorId) -> Option<&[Invocation]> {
+        self.recordings
+            .iter()
+            .find(|r| r.editor == editor)
+            .map(|r| r.invocations.as_slice())
     }
 }
 

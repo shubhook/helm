@@ -289,13 +289,13 @@ impl CommandRegistry {
         session: &mut Session,
     ) -> Result<Vec<Request>, CommandError> {
         let command = self.command(invocation)?;
-        let buffer = editor.buffer();
-        session.end_closed_record(buffer, editor.in_undo_group());
+        let id = editor.id();
+        session.end_closed_record(id, editor.in_undo_group());
         // Recorded before it runs, so a command can read the record it is
         // part of, as Escape does for a counted insert.
-        let recorded = session.is_recording(buffer) || self.is_change(invocation.command.as_str());
+        let recorded = session.is_recording(id) || self.is_change(invocation.command.as_str());
         if recorded {
-            session.record(buffer, invocation);
+            session.record(id, invocation);
         }
         let mut requests = Vec::new();
         let result = (command.run)(CommandContext {
@@ -308,12 +308,12 @@ impl CommandRegistry {
         });
         if let Err(error) = result {
             if recorded {
-                session.unrecord(buffer);
+                session.unrecord(id);
             }
             return Err(error);
         }
-        if recorded && !editor.in_undo_group() && session.is_recording(buffer) {
-            session.finish_record();
+        if recorded && !editor.in_undo_group() {
+            session.finish_record(id);
         }
         Ok(requests)
     }

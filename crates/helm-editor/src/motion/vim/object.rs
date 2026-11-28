@@ -270,9 +270,10 @@ fn word(
     }
     let mut trailing = false;
     if first == 0 {
-        // On white space: the white space and the word after it.
+        // On white space: the white space and the word after it, `n`
+        // times. A word with no white space before it, such as `.` right
+        // after `foo`, counts as the next word on its own.
         for _ in 0..n {
-            next_run(&mut reader).filter(|&run| run == 0)?;
             reader.skip_while(is_blank);
             let run = next_run(&mut reader)?;
             reader.skip_while(|c| class(c, big) == Some(run));
@@ -371,11 +372,13 @@ fn pair(
         end = left(&mut back);
     }
     drop(back);
+    // With both left out, the interior is whole lines, even one empty
+    // line: in `{\n\n}` both `start` and `end` are that line's break.
+    if opens_a_line && closes_a_line && start <= end {
+        return Some(Span::Lines(line_of(buffer, start), line_of(buffer, end)));
+    }
     if start >= end {
         return None;
-    }
-    if opens_a_line && closes_a_line {
-        return Some(Span::Lines(line_of(buffer, start), line_of(buffer, end)));
     }
     Some(Span::Chars(start..end))
 }
@@ -391,21 +394,24 @@ fn quote(
 ) -> Option<Span> {
     let from = line_start(buffer, line_of(buffer, p));
     let mut reader = Forward::new(buffer, &mut reads.forward, from);
-    // The line's quotes, up to the ones the pair needs.
-    let mut quotes: Vec<usize> = Vec::new();
-    let mut on: Option<usize> = None;
+    // One pass over the line, keeping only what the pair needs: how many
+    // quotes came before the cursor and the last of them, the cursor's own
+    // quote and its index, and up to two quotes after the cursor. Each
+    // char costs a fixed amount, so a long line is read once.
+    let mut count = 0;
+    let mut last_before: Option<usize> = None;
+    let mut on: Option<(usize, usize)> = None;
+    let mut after: [usize; 2] = [0; 2];
+    let mut found = 0;
     let mut escaped = false;
     loop {
         let at = reader.offset();
-        // Enough quotes read to decide?
         if at > p {
-            let before = quotes.iter().filter(|&&q| q < p).count();
-            let after = quotes.len() - before - usize::from(on.is_some());
             let enough = match on {
-                Some(i) if i % 2 == 0 => quotes.len() > i + 1,
+                Some((i, _)) if i % 2 == 0 => found >= 1,
                 Some(_) => true,
-                None if before > 0 => after >= 1,
-                None => after >= 2,
+                None if last_before.is_some() => found >= 1,
+                None => found >= 2,
             };
             if enough {
                 break;
@@ -417,24 +423,27 @@ fn quote(
         }
         if c == quote && !escaped {
             if at == p {
-                on = Some(quotes.len());
+                on = Some((count, at));
+            } else if at < p {
+                last_before = Some(at);
+            } else if found < 2 {
+                after[found] = at;
+                found += 1;
             }
-            quotes.push(at);
+            count += 1;
         }
         escaped = c == '\\';
         reader.advance();
     }
     drop(reader);
+    let next = |k: usize| (k < found).then(|| after[k]);
     let (o, c) = match on {
-        Some(i) if i % 2 == 0 => (quotes[i], *quotes.get(i + 1)?),
-        Some(i) => (quotes[i - 1], quotes[i]),
-        None => {
-            let before = quotes.iter().rposition(|&q| q < p);
-            match before {
-                Some(b) => (quotes[b], *quotes.get(b + 1)?),
-                None => (*quotes.first()?, *quotes.get(1)?),
-            }
-        }
+        Some((i, at)) if i % 2 == 0 => (at, next(0)?),
+        Some((_, at)) => (last_before?, at),
+        None => match last_before {
+            Some(before) => (before, next(0)?),
+            None => (next(0)?, next(1)?),
+        },
     };
     let q = quote.len_utf8();
     if inner {

@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use helm_text::{
     Buffer, BufferId, BufferSet, Edit, FileFormat, TextBuffer, Transaction, TransactionId,
@@ -134,8 +135,11 @@ pub(crate) use vim::{Entry, Operator, Target};
 /// key reaches the new keymap. Otherwise typing in the new keymap folds
 /// into the group the old one opened. Grouping VS Code's typing by pauses
 /// and cursor moves is a later task.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Editor {
+    /// This editor's own identity (T-109), so a session can tell two views
+    /// of one buffer apart. [`Clone`] gives the copy a new one.
+    id: EditorId,
     buffer: BufferId,
     format: FileFormat,
     selections: Selections,
@@ -153,6 +157,37 @@ pub struct Editor {
     /// The open undo group, if any, and the transaction its edits fold
     /// into once its first edit has applied one.
     group: Option<Option<TransactionId>>,
+}
+
+/// An [`Editor`]'s identity within the process (T-109). Vim's `.` record
+/// belongs to the editor that made it, not to its buffer, since two
+/// editors can show one buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct EditorId(u64);
+
+impl EditorId {
+    /// A new identity, never handed out before in this process.
+    fn next() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl Clone for Editor {
+    /// A copy with the same selections, history and undo group, and an
+    /// identity of its own: it is another view.
+    fn clone(&self) -> Self {
+        Self {
+            id: EditorId::next(),
+            buffer: self.buffer,
+            format: self.format,
+            selections: self.selections.clone(),
+            history: self.history.clone(),
+            undone: self.undone.clone(),
+            goals: self.goals.clone(),
+            group: self.group,
+        }
+    }
 }
 
 /// The selections just before and just after one transaction.
@@ -178,6 +213,7 @@ impl Editor {
     /// [`newline`](Self::newline) inserts.
     pub fn new(buffer: BufferId, format: FileFormat) -> Self {
         Self {
+            id: EditorId::next(),
             buffer,
             format,
             selections: Selections::single(Selection::cursor(0)),
@@ -186,6 +222,11 @@ impl Editor {
             goals: Vec::new(),
             group: None,
         }
+    }
+
+    /// This editor's identity (T-109).
+    pub(crate) fn id(&self) -> EditorId {
+        self.id
     }
 
     /// The buffer this editor edits.
